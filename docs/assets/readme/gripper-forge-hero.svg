@@ -1,0 +1,109 @@
+<svg width="1400" height="460" viewBox="0 0 1400 460" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="60" y1="20" x2="1350" y2="460" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#12181F"/>
+      <stop offset="0.52" stop-color="#0C1037"/>
+      <stop offset="1" stop-color="#1A0757"/>
+    </linearGradient>
+    <linearGradient id="title" x1="70" y1="150" x2="760" y2="260" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#80CDE1"/>
+      <stop offset="0.46" stop-color="#B6B8D9"/>
+      <stop offset="0.78" stop-color="#AB96CE"/>
+      <stop offset="1" stop-color="#F87512"/>
+    </linearGradient>
+    <linearGradient id="cyanFinger" x1="870" y1="80" x2="1040" y2="390" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#80CDE1"/>
+      <stop offset="1" stop-color="#2B659A"/>
+    </linearGradient>
+    <linearGradient id="orangeFinger" x1="1190" y1="60" x2="1050" y2="390" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F87512"/>
+      <stop offset="0.65" stop-color="#CE4426"/>
+      <stop offset="1" stop-color="#603DAF"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="960" y1="270" x2="1120" y2="430" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F9F6E8"/>
+      <stop offset="0.5" stop-color="#B6B8D9"/>
+      <stop offset="1" stop-color="#717BCE"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(1084 240) rotate(90) scale(260 300)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#603DAF" stop-opacity="0.52"/>
+      <stop offset="1" stop-color="#603DAF" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" stroke="#B6B8D9" stroke-opacity="0.08"/>
+    </pattern>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#03040D" flood-opacity="0.6"/>
+    </filter>
+    <filter id="softGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="round"><rect width="1400" height="460" rx="28"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#round)">
+    <rect width="1400" height="460" fill="url(#bg)"/>
+    <rect width="1400" height="460" fill="url(#grid)"/>
+    <ellipse cx="1084" cy="240" rx="300" ry="270" fill="url(#glow)"/>
+    <path d="M0 404C270 358 428 452 700 402C974 352 1116 380 1400 304V460H0V404Z" fill="#1324A2" fill-opacity="0.18"/>
+    <path d="M-20 425C268 377 450 472 724 416C1000 360 1186 395 1420 328" stroke="#80CDE1" stroke-opacity="0.22" stroke-width="2"/>
+
+    <g font-family="Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif">
+      <g transform="translate(68 54)">
+        <rect width="204" height="34" rx="17" fill="#80CDE1" fill-opacity="0.12" stroke="#80CDE1" stroke-opacity="0.52"/>
+        <circle cx="19" cy="17" r="5" fill="#80CDE1" filter="url(#softGlow)"/>
+        <text x="34" y="22" fill="#CCEEF4" font-size="13" font-weight="700" letter-spacing="2.2">PARAMETRIC DESIGN</text>
+      </g>
+
+      <text x="64" y="194" fill="url(#title)" font-size="90" font-weight="900" letter-spacing="-3.6">GRIPPER</text>
+      <text x="64" y="278" fill="#F9F6E8" font-size="90" font-weight="900" letter-spacing="-3.6">FORGE</text>
+      <text x="70" y="322" fill="#B6B8D9" font-size="21" font-weight="500" letter-spacing="1.2">从参数，到可打印 STL。</text>
+      <text x="70" y="354" fill="#717BCE" font-size="13" font-weight="700" letter-spacing="2.1">REAL-TIME MESH  /  COUPLED MOUNT  /  GEOMETRY GATES</text>
+
+      <g transform="translate(68 384)">
+        <rect width="150" height="32" rx="8" fill="#F87512"/>
+        <text x="75" y="21" text-anchor="middle" fill="#12181F" font-size="12" font-weight="900" letter-spacing="1.5">LIVE STL</text>
+        <rect x="162" width="182" height="32" rx="8" fill="#603DAF"/>
+        <text x="253" y="21" text-anchor="middle" fill="#F9F6E8" font-size="12" font-weight="800" letter-spacing="1.3">3-HOLE SYNC</text>
+        <rect x="356" width="178" height="32" rx="8" fill="#1324A2" stroke="#717BCE"/>
+        <text x="445" y="21" text-anchor="middle" fill="#CCEEF4" font-size="12" font-weight="800" letter-spacing="1.3">MESH VERIFIED</text>
+      </g>
+    </g>
+
+    <g>
+      <path d="M912 117C918 88 951 65 976 86C1014 118 1037 175 1044 238L1037 334H900L908 234L912 117Z" fill="url(#cyanFinger)"/>
+      <path d="M1250 104C1242 72 1208 58 1184 82C1148 119 1126 178 1121 239L1129 334H1264L1255 230L1250 104Z" fill="url(#orangeFinger)"/>
+
+      <path d="M894 270H1043V400H874L894 270Z" fill="url(#metal)"/>
+      <path d="M1122 270H1270L1292 400H1122V270Z" fill="url(#metal)"/>
+      <path d="M874 400H1043L1018 430H896L874 400Z" fill="#4E4CA9"/>
+      <path d="M1122 400H1292L1268 430H1146L1122 400Z" fill="#4E4CA9"/>
+
+      <path d="M920 270C935 258 949 245 963 224C982 195 991 165 990 125" stroke="#CCEEF4" stroke-opacity="0.7" stroke-width="4"/>
+      <path d="M1244 270C1228 258 1214 244 1200 222C1182 192 1175 163 1177 121" stroke="#FFD15C" stroke-opacity="0.62" stroke-width="4"/>
+
+      <g fill="#12181F" stroke="#F9F6E8" stroke-width="3">
+        <circle cx="916" cy="305" r="9"/><circle cx="1014" cy="305" r="9"/><circle cx="1014" cy="372" r="9"/>
+        <circle cx="1150" cy="305" r="9"/><circle cx="1248" cy="305" r="9"/><circle cx="1150" cy="372" r="9"/>
+      </g>
+    </g>
+
+    <g stroke="#80CDE1" stroke-width="1.5" stroke-opacity="0.74" fill="none">
+      <path d="M866 270V84M866 84H912M866 270H894"/>
+      <path d="M854 98L866 84L878 98M854 256L866 270L878 256"/>
+      <path d="M1014 352H1150"/>
+      <path d="M1028 340L1014 352L1028 364M1136 340L1150 352L1136 364"/>
+    </g>
+    <g fill="#CCEEF4" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" letter-spacing="1">
+      <text x="806" y="184" transform="rotate(-90 806 184)">PARAMETER Δ</text>
+      <text x="1050" y="344">LIVE GAP</text>
+      <text x="1270" y="94" fill="#FFD15C">BUILD READY</text>
+    </g>
+
+    <circle cx="1335" cy="55" r="4" fill="#F87512" filter="url(#softGlow)"/>
+    <circle cx="1316" cy="55" r="4" fill="#603DAF"/>
+    <circle cx="1297" cy="55" r="4" fill="#80CDE1"/>
+  </g>
+  <rect x="1" y="1" width="1398" height="458" rx="27" stroke="#80CDE1" stroke-opacity="0.18" stroke-width="2"/>
+</svg>
