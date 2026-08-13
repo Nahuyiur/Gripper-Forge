@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/assets/readme/gripper-forge-hero.svg" width="100%" alt="Gripper Forge — parametric gripper design station" />
+  <img src="docs/assets/readme/gripper-forge-hero.png" width="100%" alt="Gripper Forge — parametric gripper design station" />
 </div>
 
 <div align="center">
@@ -168,5 +168,5 @@ npm test
   <br />
   <strong>Shape it. Verify it. Print it.</strong>
   <br />
-  <sub>GRIPPER FORGE · PARAMETRIC DESIGN STATION</sub>
+  <sub>GRIPPER FORGE · MESH WORKBENCH</sub>
 </div>
