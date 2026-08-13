@@ -27,3 +27,20 @@ export function applyGeneChange(current: GeneValues, name: string, value: number
   }
   return next;
 }
+
+/**
+ * 前端的参数联动属于具体生成器，而不是整个设计器。
+ * 未注册前端联动的构型按普通数值参数处理；这样增加新构型时，
+ * 不会意外继承 Fin-Ray 的托槽、防滑纹或指甲联动规则。
+ */
+export function applyFamilyGeneChange(
+  generator: string,
+  current: GeneValues,
+  name: string,
+  value: number,
+): GeneValues {
+  if (generator === "fin-ray-profile") {
+    return applyGeneChange(current, name, value);
+  }
+  return { ...current, [name]: value };
+}

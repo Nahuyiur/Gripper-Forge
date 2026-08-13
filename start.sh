@@ -24,14 +24,35 @@ file_hash() {
   fi
 }
 
-command -v node >/dev/null 2>&1 || fail "未找到 Node.js，请先安装 Node.js 22.13 或更高版本。"
-command -v npm >/dev/null 2>&1 || fail "未找到 npm，请重新安装完整的 Node.js。"
+file_is_dataless() {
+  local target="$1"
+  if [[ "$(uname -s)" == "Darwin" && -e "$target" ]]; then
+    [[ "$(stat -f '%Sf' "$target" 2>/dev/null || true)" == *dataless* ]]
+    return
+  fi
+  return 1
+}
 
-NODE_MAJOR="$(node -p 'Number(process.versions.node.split(".")[0])')"
-NODE_MINOR="$(node -p 'Number(process.versions.node.split(".")[1])')"
-if (( NODE_MAJOR < 22 || (NODE_MAJOR == 22 && NODE_MINOR < 13) )); then
-  fail "当前 Node.js 为 $(node --version)，需要 22.13 或更高版本。"
+NODE_BIN=""
+NODE_CANDIDATES=()
+if command -v node >/dev/null 2>&1; then
+  NODE_CANDIDATES+=("$(command -v node)")
 fi
+NODE_CANDIDATES+=("/opt/homebrew/bin/node" "/usr/local/bin/node")
+if [[ -n "${NVM_DIR:-}" && -d "${NVM_DIR}/versions/node" ]]; then
+  for candidate in "${NVM_DIR}"/versions/node/*/bin/node; do
+    NODE_CANDIDATES+=("$candidate")
+  done
+fi
+for candidate in "${NODE_CANDIDATES[@]}"; do
+  [[ -x "$candidate" ]] || continue
+  if "$candidate" -e 'const [a,b]=process.versions.node.split(".").map(Number); process.exit(a>22||(a===22&&b>=13)?0:1)'; then
+    NODE_BIN="$candidate"
+  fi
+done
+[[ -n "$NODE_BIN" ]] || fail "未找到 Node.js 22.13 或更高版本。"
+export PATH="$(dirname "$NODE_BIN"):$PATH"
+command -v npm >/dev/null 2>&1 || fail "所选 Node.js 缺少 npm，请重新安装完整版本。"
 
 PYTHON_BIN=""
 for candidate in python3.13 python3.12 python3; do
@@ -41,11 +62,13 @@ for candidate in python3.13 python3.12 python3; do
   fi
 done
 [[ -n "$PYTHON_BIN" ]] || fail "未找到 Python 3.12 或更高版本。"
+info "使用 $(node --version) 与 Python $($PYTHON_BIN --version 2>&1 | awk '{print $2}')。"
 
 NPM_LOCK_HASH="$(file_hash package-lock.json)"
 NPM_MARKER="node_modules/.gripper-forge-lock.sha256"
 NPM_INSTALLED_HASH="$(cat "$NPM_MARKER" 2>/dev/null || true)"
-if [[ ! -d node_modules || "$NPM_INSTALLED_HASH" != "$NPM_LOCK_HASH" ]]; then
+NPM_ENTRY="node_modules/vinext/package.json"
+if [[ ! -d node_modules || "$NPM_INSTALLED_HASH" != "$NPM_LOCK_HASH" ]] || file_is_dataless "$NPM_ENTRY"; then
   info "正在安装网页依赖…"
   npm ci
   printf '%s' "$NPM_LOCK_HASH" > "$NPM_MARKER"
@@ -61,7 +84,19 @@ fi
 REQUIREMENTS_HASH="$(file_hash requirements.txt)"
 PYTHON_MARKER=".venv/.gripper-forge-requirements.sha256"
 PYTHON_INSTALLED_HASH="$(cat "$PYTHON_MARKER" 2>/dev/null || true)"
-if [[ "$PYTHON_INSTALLED_HASH" == "$REQUIREMENTS_HASH" ]]; then
+PYTHON_SITE="$($PROJECT_DIR/.venv/bin/python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+PYTHON_ENTRY="$PYTHON_SITE/uvicorn/__main__.py"
+PYTHON_DEPS_DATALESS=false
+if file_is_dataless "$PYTHON_ENTRY"; then
+  PYTHON_DEPS_DATALESS=true
+fi
+if [[ "$PYTHON_DEPS_DATALESS" == true ]]; then
+  info "检测到 iCloud 已卸载 Python 依赖，正在重建虚拟环境…"
+  "$PYTHON_BIN" -m venv --clear .venv
+  PYTHON_INSTALLED_HASH=""
+  PYTHON_DEPS_DATALESS=false
+fi
+if [[ "$PYTHON_INSTALLED_HASH" == "$REQUIREMENTS_HASH" && -f "$PYTHON_ENTRY" && "$PYTHON_DEPS_DATALESS" == false ]]; then
   info "几何服务依赖已是最新。"
 else
   info "正在安装几何服务依赖…"

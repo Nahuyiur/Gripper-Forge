@@ -9,6 +9,8 @@ export type InterfaceDesign = {
 export type DesignMode = "source" | "finray";
 
 export type Design = {
+  family_id?: string;
+  /** 兼容旧设计文件；新数据使用 family_id。 */
   mode?: DesignMode;
   parameterized?: boolean;
   symmetric: boolean;
@@ -31,17 +33,32 @@ export type GeneSpec = {
 
 export type Template = {
   title: string;
-  category: DesignMode;
+  family_id: string;
+  /** 兼容旧 schema。 */
+  category?: DesignMode;
   blurb: string;
   design: Design;
+};
+
+export type ConstructionFamily = {
+  id: string;
+  title: string;
+  description: string;
+  generator: string;
+  default_template: string;
+  genes: Record<string, GeneSpec>;
+  groups: Array<{ key: string; title: string }>;
+  seed: { kind: "stl_pair" | "procedural"; body: string | null; base: string | null };
+  version: number;
 };
 
 export type Schema = {
   genes: Record<string, GeneSpec>;
   groups: Array<{ key: string; title: string }>;
-  gene_sets: Record<DesignMode, Record<string, GeneSpec>>;
-  group_sets: Record<DesignMode, Array<{ key: string; title: string }>>;
-  categories: Array<{ key: DesignMode; title: string; default_template: string }>;
+  gene_sets: Record<string, Record<string, GeneSpec>>;
+  group_sets: Record<string, Array<{ key: string; title: string }>>;
+  families: ConstructionFamily[];
+  categories: Array<{ key: string; title: string; default_template: string }>;
   templates: Record<string, Template>;
   default_template: string;
   roles: { labels: Record<string, string> };
@@ -67,7 +84,8 @@ export type FingerReport = {
 };
 
 export type Report = {
-  mode?: DesignMode;
+  family_id?: string;
+  mode?: string;
   parameterized?: boolean;
   symmetric: boolean;
   fingers: Record<string, FingerReport>;

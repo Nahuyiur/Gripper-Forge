@@ -2,6 +2,16 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from .families import ConstructionFamily, FamilyRegistry
+from .geometry_families import (
+    ARC_WRAP_DEFAULT,
+    ARC_WRAP_GENES,
+    ARC_WRAP_GROUPS,
+    PRECISION_TIP_DEFAULT,
+    PRECISION_TIP_GENES,
+    PRECISION_TIP_GROUPS,
+)
+
 
 INTERFACE_GENES = {
     "pair_hole_pitch_mm": {
@@ -208,49 +218,131 @@ DEFAULT = {
 }
 
 
-def pair(a: dict, b: dict | None = None, symmetric: bool = True, mode: str = "finray") -> dict:
-    return {
-        "mode": mode,
-        "parameterized": False if mode == "source" else True,
+def pair(a: dict, b: dict | None = None, symmetric: bool = True, family_id: str = "finray") -> dict:
+    design = {
+        "family_id": family_id,
         "symmetric": symmetric,
         "interface": deepcopy(INTERFACE_DEFAULT),
         "a": deepcopy(a),
         "b": deepcopy(b or a),
     }
+    # mode is a legacy source/Fin-Ray discriminator consumed by older clients.
+    # New construction families use family_id only and must not widen DesignMode.
+    if family_id in {"source", "finray"}:
+        design["mode"] = family_id
+        design["parameterized"] = family_id != "source"
+    return design
 
 
 TEMPLATES = {
     "原始夹爪": {
         "title": "原始夹爪",
+        "family_id": "source",
         "category": "source",
         "blurb": "独立修改原始外形；尖端与后段主体可分别保持实心或生成侧面贯穿的伪 Fin-Ray 斜条。",
-        "design": pair(SOURCE_DEFAULT, mode="source"),
+        "design": pair(SOURCE_DEFAULT, family_id="source"),
     },
     "Fin-Ray 默认": {
         "title": "Fin-Ray 默认",
+        "family_id": "finray",
         "category": "finray",
         "blurb": "参考 SO-101 手指的纤细弧形背梁、十四腔渐变斜肋与薄指尖；安装端仍锁定当前 Robotiq 三孔接口和独立连接孔。",
         "design": pair(DEFAULT),
     },
     "防滑纹": {
         "title": "防滑纹",
+        "family_id": "finray",
         "category": "finray",
         "blurb": "接触面带七条一体式圆滑纹路，适合光滑物体。",
         "design": pair({**DEFAULT, "rib_count": 8, "grip_count": 7, "grip_height_mm": 0.9}),
     },
     "圆物托槽": {
         "title": "圆物托槽",
+        "family_id": "finray",
         "category": "finray",
         "blurb": "接触面生成凹弧，用于稳定包覆圆柱或瓶状物。",
         "design": pair({**DEFAULT, "finger_length_mm": 82.0, "cradle_radius_mm": 18.0, "cradle_depth_mm": 3.0}),
     },
     "指甲薄片": {
         "title": "指甲薄片",
+        "family_id": "finray",
         "category": "finray",
         "blurb": "指尖生成一体式薄片，便于挑起纸片或扁平零件。",
         "design": pair({**DEFAULT, "finger_length_mm": 70.0, "rib_count": 7, "nail_len_mm": 9.0, "nail_thickness_mm": 1.2}),
     },
+    "弧面包覆": {
+        "title": "弧面包覆",
+        "family_id": "arc_wrap",
+        "blurb": "原创宽面薄身构型，以连续弧槽和圆钝前端包覆圆柱类物体。",
+        "design": pair(ARC_WRAP_DEFAULT, family_id="arc_wrap"),
+    },
+    "精密尖指": {
+        "title": "精密尖指",
+        "family_id": "precision_tip",
+        "blurb": "原创紧凑楔形构型，前窄后宽并保留局部平直接触段，用于精密捏取。",
+        "design": pair(PRECISION_TIP_DEFAULT, family_id="precision_tip"),
+    },
 }
+
+
+FAMILY_REGISTRY = FamilyRegistry([
+    ConstructionFamily(
+        family_id="source",
+        title="原始夹爪",
+        description="以用户提供的主体 STL 和配套底座 STL 为几何种子，在保留安装接口的前提下修改外形与内部结构。",
+        generator="warped-source-with-independent-through-cavities",
+        default_template="原始夹爪",
+        genes=SOURCE_GENES,
+        groups=SOURCE_GROUPS,
+        seed={
+            "kind": "stl_pair",
+            "body": "public/zhuti-2-0813-original.stl",
+            "base": "public/底座-original.stl",
+        },
+    ),
+    ConstructionFamily(
+        family_id="finray",
+        title="Fin-Ray",
+        description="由参数轮廓生成的 Fin-Ray 构型族，共用当前 Robotiq 三孔接口与底座。",
+        generator="fin-ray-profile",
+        default_template="Fin-Ray 默认",
+        genes=GENES,
+        groups=GROUPS,
+        seed={
+            "kind": "procedural",
+            "body": None,
+            "base": "public/底座-original.stl",
+        },
+    ),
+    ConstructionFamily(
+        family_id="arc_wrap",
+        title="弧面包覆",
+        description="原创宽面薄身实体构型，以连续弧槽和圆钝止挡增强对圆物的包覆。",
+        generator="arc-wrap-solid",
+        default_template="弧面包覆",
+        genes=ARC_WRAP_GENES,
+        groups=ARC_WRAP_GROUPS,
+        seed={
+            "kind": "procedural",
+            "body": None,
+            "base": "public/底座-original.stl",
+        },
+    ),
+    ConstructionFamily(
+        family_id="precision_tip",
+        title="精密尖指",
+        description="原创紧凑实心楔形构型，以窄尖和局部平直接触段面向精密捏取。",
+        generator="precision-wedge-solid",
+        default_template="精密尖指",
+        genes=PRECISION_TIP_GENES,
+        groups=PRECISION_TIP_GROUPS,
+        seed={
+            "kind": "procedural",
+            "body": None,
+            "base": "public/底座-original.stl",
+        },
+    ),
+])
 
 
 def public_schema() -> dict:
@@ -258,23 +350,24 @@ def public_schema() -> dict:
         "lang": "zh-CN",
         "genes": GENES,
         "groups": GROUPS,
-        "gene_sets": {"source": SOURCE_GENES, "finray": GENES},
-        "group_sets": {"source": SOURCE_GROUPS, "finray": GROUPS},
+        "gene_sets": FAMILY_REGISTRY.gene_sets(),
+        "group_sets": FAMILY_REGISTRY.group_sets(),
         "interface_genes": INTERFACE_GENES,
         "interface_groups": INTERFACE_GROUPS,
         "interface_default": INTERFACE_DEFAULT,
+        "families": FAMILY_REGISTRY.public_catalog(),
+        # 兼容早期网页；新客户端应读取 families。
         "categories": [
-            {"key": "source", "title": "原始夹爪", "default_template": "原始夹爪"},
-            {"key": "finray", "title": "Fin-Ray 默认", "default_template": "Fin-Ray 默认"},
+            {"key": family.family_id, "title": family.title, "default_template": family.default_template}
+            for family in FAMILY_REGISTRY.values()
         ],
         "templates": TEMPLATES,
         "default_template": "原始夹爪",
         "roles": {"symmetric": "手指", "pair": ["a", "b"], "labels": {"a": "手指 A", "b": "手指 B"}},
         "geometry": {
-            "method": "dual-source-and-finray",
+            "method": "registered-construction-families",
             "generators": {
-                "source": "warped-source-with-independent-through-cavities",
-                "finray": "fin-ray-profile",
+                family.family_id: family.generator for family in FAMILY_REGISTRY.values()
             },
             "mount_lock_y_mm": 55.0,
             "root_thickness_mm": 26.0,

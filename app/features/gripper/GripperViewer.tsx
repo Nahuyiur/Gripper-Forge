@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { safePreviewGap } from "../../lib/finray-preview";
+import { familyIdOf } from "./design";
 import type { Design, DisplayMode } from "./types";
 
 const FINGER_COLORS = [0xff5e57, 0x00b9b6];
@@ -57,7 +58,7 @@ function renderDesign(rt: Pick<Runtime, "group" | "source" | "mountSource" | "ba
     });
     if (displayMode !== "base") {
       const bodyMesh = new THREE.Mesh(rt.source.clone(), material);
-      bodyMesh.userData.kind = design.mode === "source" ? "原始主体" : "Fin-Ray 参数化主体";
+      bodyMesh.userData.kind = familyIdOf(design) === "source" ? "原始主体" : "参数化主体";
       fingerGroup.add(bodyMesh);
     }
     if (displayMode !== "body") {

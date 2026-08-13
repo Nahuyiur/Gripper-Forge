@@ -5,8 +5,8 @@
 <div align="center">
   <br />
   <img src="https://img.shields.io/badge/LIVE_STL-REAL--TIME-F87512?style=for-the-badge&labelColor=12181F" alt="Real-time STL" />
-  <img src="https://img.shields.io/badge/GEOMETRY_TESTS-74-80CDE1?style=for-the-badge&labelColor=12181F" alt="74 geometry tests" />
-  <img src="https://img.shields.io/badge/FRONTEND_TESTS-10-717BCE?style=for-the-badge&labelColor=12181F" alt="10 frontend tests" />
+  <img src="https://img.shields.io/badge/GEOMETRY_TESTS-99-80CDE1?style=for-the-badge&labelColor=12181F" alt="99 geometry tests" />
+  <img src="https://img.shields.io/badge/FRONTEND_TESTS-11-717BCE?style=for-the-badge&labelColor=12181F" alt="11 frontend tests" />
   <img src="https://img.shields.io/badge/RELEASE-v0.1.0-603DAF?style=for-the-badge&labelColor=12181F" alt="v0.1.0" />
 </div>
 
@@ -38,7 +38,7 @@ Gripper Forge 把这条链路压缩成一个浏览器工作台：
   <tr>
     <td width="25%" align="center"><strong>⚡ 实时网格</strong><br/><sub>拖动参数时连续重建真实 STL，当前视角保持不动</sub></td>
     <td width="25%" align="center"><strong>⌁ 接口联动</strong><br/><sub>主体、三孔安装区与底座共享同一组接口参数</sub></td>
-    <td width="25%" align="center"><strong>◈ 双生成器</strong><br/><sub>原始夹爪与 Fin-Ray 拥有互不干扰的参数状态</sub></td>
+    <td width="25%" align="center"><strong>◈ 四种构型</strong><br/><sub>原始、Fin-Ray、弧面包覆与精密尖指状态互不干扰</sub></td>
     <td width="25%" align="center"><strong>✓ 几何闸门</strong><br/><sub>封闭性、方向、退化面、单实体与孔位全部检查</sub></td>
   </tr>
 </table>
@@ -59,6 +59,8 @@ Gripper Forge 把这条链路压缩成一个浏览器工作台：
 |---|---|
 | **原始夹爪** | 有效长度、指尖厚度、侧偏；全实心／尖端伪 Fin-Ray／后段伪 Fin-Ray／双区域四种内部结构 |
 | **Fin-Ray** | 默认、防滑纹、圆物托槽、指甲薄片；长度、内扣、外壁、肋条和接触特征独立控制 |
+| **弧面包覆** | 宽面薄身、连续弧槽与圆钝止挡，面向圆柱和大面积接触 |
+| **精密尖指** | 紧凑楔身、窄尖、渐缩、侧偏与平直接触段，面向插接和小件捏取 |
 | **三孔接口** | 双孔中心距与单孔至双孔轴线距离可调；底座外边界和主体根部同步跟随 |
 | **双指设计** | 左右对称一键同步，也可分别编辑手指 A / B |
 | **模型来源** | 默认加载主体与底座模板；支持成对导入 STL 并检查接口是否匹配 |
@@ -116,6 +118,10 @@ Gripper-Forge/
 
 更详细的模块边界见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
+### 扩展基本构型
+
+新的基础 STL 会作为独立“构型族”注册，并拥有自己的参数、生成器、默认预设与几何检查；三孔接口、底座同步、实时预览和导出链路保持共享。这样新增构型不会把旧构型的参数逻辑越堆越乱。具体约定见 [`docs/ADDING_A_FAMILY.md`](docs/ADDING_A_FAMILY.md)。
+
 ## ▶ 快速启动
 
 需要 **Node.js 22.13+** 与 **Python 3.12+**。启动脚本会自动创建 Python 虚拟环境，并只在锁文件变化时重新安装依赖。
@@ -142,10 +148,11 @@ npm test
 
 完整测试覆盖：
 
-- `74` 项后端几何、接口、导入导出和生成回环测试；
-- `10` 项前端能力、实时 STL 协议和交互契约测试；
+- `99` 项后端几何、接口、导入导出和生成回环测试；
+- `11` 项前端能力、实时 STL 协议和交互契约测试；
 - 两套生成器各 `160` 组确定性参数组合；
 - Fin-Ray `14` 个控件和原始夹爪 `11` 个独立控件的逐项有效性；
+- 弧面包覆与精密尖指所有参数的默认、上下界及交错极值；
 - 全低、全高、交错极值、四种内部结构和左右非对称场景。
 
 <details>

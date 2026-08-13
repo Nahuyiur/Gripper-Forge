@@ -12,8 +12,10 @@ import trimesh
 from shapely.geometry import Polygon, box
 from shapely.ops import unary_union
 
+from .geometry_families import FAMILY_BUILDERS, build_active_body
 from .schema import (
     DEFAULT,
+    FAMILY_REGISTRY,
     GENES,
     INTERFACE_DEFAULT,
     INTERFACE_GENES,
@@ -417,6 +419,8 @@ def interface_report(
     bodies: dict[str, trimesh.Trimesh],
     base: trimesh.Trimesh,
     raw_interface: dict[str, Any] | None,
+    *,
+    strict_body_pattern: bool = False,
 ) -> dict[str, Any]:
     interface = normalize_interface(raw_interface)
     centers = interface_hole_centers(interface)
@@ -427,7 +431,10 @@ def interface_report(
     ]
     # 某些原始主体外形参数会让活动区三角面不再与安装端面共面，端面环
     # 提取器因此少报孔；接口变形本身仍以三个刚性平台逐点移动孔边界。
-    body_plane_errors = [error if np.isfinite(error) else 0.0 for error in measured_body_errors]
+    body_plane_errors = [
+        error if np.isfinite(error) or strict_body_pattern else 0.0
+        for error in measured_body_errors
+    ]
     base_plane_errors = [interface_pattern_error(base, interface, float(z)) for z in base.bounds[:, 2]]
     body_axis_error = max(body_plane_errors, default=float("inf"))
     base_axis_error = max(base_plane_errors, default=float("inf"))
@@ -758,9 +765,89 @@ def mesh_report(
         "body_count": int(mesh.body_count),
         "cavity_count": cavity_count,
         "contact_feature_count": int(genes["grip_count"]) + int(float(genes["tip_lip_mm"]) > 0) + int(float(genes["cradle_depth_mm"]) > 0) + int(float(genes["nail_len_mm"]) > 0),
+        "opening_loss_mm": float(genes["tip_lip_mm"]) + float(genes["grip_height_mm"]),
         "problems": problems,
         "notes": notes,
         "genes": genes,
+        "stl": "夹爪手指.stl" if role == "finger" else f"夹爪手指-{role.upper()}.stl",
+    }
+
+
+def procedural_family_mesh_report(
+    generator: str,
+    role: str,
+    raw_genes: dict[str, Any] | None,
+    source: trimesh.Trimesh | None = None,
+    raw_interface: dict[str, Any] | None = None,
+) -> tuple[trimesh.Trimesh, dict[str, Any]]:
+    """生成独立程序构型，并用真实端面孔型而非注册常量验证接口。"""
+    active = build_active_body(generator, raw_genes)
+    mount = fixed_mount_mesh(source) if source is not None else default_mount_mesh().copy()
+    mesh = _as_mesh(trimesh.boolean.union([mount, active.mesh], engine="manifold", check_volume=False))
+    mesh.remove_unreferenced_vertices()
+    mesh = adapt_interface_mesh(mesh, raw_interface, "body")
+
+    volume = abs(float(mesh.volume))
+    degenerate = int(np.count_nonzero(mesh.area_faces < 1e-8))
+    expected_centers = interface_hole_centers(raw_interface)
+    # 宽面指端允许在孔轴方向略宽于安装块，因此不能拿整只手指的全局
+    # Z 包围盒端面当作安装端面；三孔契约固定检查安装块自身的两侧平面。
+    interface_planes = (
+        Z_CENTER - ROOT_THICKNESS_MM / 2.0,
+        Z_CENTER + ROOT_THICKNESS_MM / 2.0,
+    )
+    face_patterns = [
+        planar_hole_pattern(mesh, plane_value_override=float(z))
+        for z in interface_planes
+    ]
+    face_errors = [
+        _max_pattern_error(_pattern_centers(pattern), expected_centers)
+        for pattern in face_patterns
+    ]
+    opening_errors = [
+        max(
+            (float(np.max(np.abs(np.asarray(item["opening"]) - np.array([3.6, 3.6])))) for item in pattern),
+            default=float("inf"),
+        )
+        if len(pattern) == INTERFACE_FASTENER_COUNT else float("inf")
+        for pattern in face_patterns
+    ]
+    mount_error = max(face_errors + opening_errors, default=float("inf"))
+
+    problems: list[str] = []
+    if not mesh.is_watertight:
+        problems.append("导出网格不是封闭实体")
+    if not mesh.is_winding_consistent:
+        problems.append("部分三角面方向不一致")
+    if volume <= 0:
+        problems.append("实体体积无效")
+    if mesh.body_count != 1:
+        problems.append(f"当前生成了 {mesh.body_count} 个分离实体")
+    if degenerate:
+        problems.append(f"存在 {degenerate} 个退化三角面")
+    if any(len(pattern) != INTERFACE_FASTENER_COUNT for pattern in face_patterns):
+        problems.append("主体上下端面未同时识别到三颗真实安装孔")
+    elif not np.isfinite(mount_error) or mount_error > 0.05:
+        problems.append("主体真实孔心或孔径未与 Robotiq 三孔接口同步")
+
+    return mesh, {
+        "role": role,
+        "label": "手指" if role == "finger" else f"手指 {role.upper()}",
+        "reach_mm": round(float(mesh.bounds[1, 1] - interface_mount_top_y(raw_interface)), 2),
+        "volume_mm3": round(volume, 2),
+        "plastic_g": round(volume / 1000.0 * DENSITY_G_CM3, 2),
+        "watertight": bool(mesh.is_watertight),
+        "winding_consistent": bool(mesh.is_winding_consistent),
+        "size_mm": [round(float(value), 2) for value in mesh.extents],
+        "mount_error_mm": 999.0 if not np.isfinite(mount_error) else round(mount_error, 6),
+        "degenerate_faces": degenerate,
+        "body_count": int(mesh.body_count),
+        "cavity_count": 0,
+        "contact_feature_count": active.contact_feature_count,
+        "opening_loss_mm": active.opening_loss_mm,
+        "problems": problems,
+        "notes": [active.note],
+        "genes": active.genes,
         "stl": "夹爪手指.stl" if role == "finger" else f"夹爪手指-{role.upper()}.stl",
     }
 
@@ -1044,27 +1131,52 @@ def design_report(
     source: trimesh.Trimesh | None = None,
     base: trimesh.Trimesh | None = None,
 ) -> tuple[dict[str, trimesh.Trimesh], dict[str, Any]]:
-    mode = str(design.get("mode", "finray"))
-    if mode not in {"source", "finray"}:
-        raise ValueError("未知的主体生成模式")
+    family_id = str(design.get("family_id", design.get("mode", "finray")))
+    family = FAMILY_REGISTRY.require(family_id)
+    mode = family.family_id
     parameterized = bool(design.get("parameterized", mode != "source"))
     symmetric = bool(design.get("symmetric", True))
     interface = normalize_interface(design.get("interface"))
     roles = ["finger"] if symmetric else ["a", "b"]
     genes_by_role = {"finger": design.get("a", {}), "a": design.get("a", {}), "b": design.get("b", design.get("a", {}))}
+    builders = {
+        "warped-source-with-independent-through-cavities": (
+            source_parameterized_mesh_report if parameterized else source_mesh_report
+        ),
+        "fin-ray-profile": mesh_report,
+    }
+    if family.generator in FAMILY_BUILDERS:
+        def build_member(
+            role: str,
+            genes: dict[str, Any],
+            source_mesh_value: trimesh.Trimesh | None,
+            raw_interface: dict[str, Any] | None,
+        ) -> tuple[trimesh.Trimesh, dict[str, Any]]:
+            return procedural_family_mesh_report(
+                family.generator,
+                role,
+                genes,
+                source_mesh_value,
+                raw_interface,
+            )
+    else:
+        try:
+            build_member = builders[family.generator]
+        except KeyError as exc:
+            raise ValueError(f"基本构型 {family_id} 尚未连接几何生成器") from exc
     meshes: dict[str, trimesh.Trimesh] = {}
     fingers: dict[str, Any] = {}
     for role in roles:
-        if mode == "source" and not parameterized:
-            mesh, report = source_mesh_report(role, genes_by_role[role], source, interface)
-        elif mode == "source":
-            mesh, report = source_parameterized_mesh_report(role, genes_by_role[role], source, interface)
-        else:
-            mesh, report = mesh_report(role, genes_by_role[role], source, interface)
+        mesh, report = build_member(role, genes_by_role[role], source, interface)
         meshes[role] = mesh
         fingers[role] = report
     coupled_base = adapt_interface_mesh((base or base_mesh()).copy(), interface, "base")
-    interface_status = interface_report(meshes, coupled_base, interface)
+    interface_status = interface_report(
+        meshes,
+        coupled_base,
+        interface,
+        strict_body_pattern=family.generator in FAMILY_BUILDERS,
+    )
     problems = [problem for report in fingers.values() for problem in report["problems"]]
     problems.extend(interface_status["problems"])
     notes = [note for report in fingers.values() for note in report["notes"]]
@@ -1072,13 +1184,12 @@ def design_report(
     total_plastic = sum(report["plastic_g"] * quantity for report in fingers.values())
     reach = max(report["reach_mm"] for report in fingers.values())
     max_mount_error = max(float(report["mount_error_mm"]) for report in fingers.values())
-    opening_loss = 0.0
-    if mode == "finray":
-        opening_loss = 2.0 * max(
-            float(g["tip_lip_mm"]) + float(g["grip_height_mm"])
-            for g in genes_by_role.values()
-        )
+    opening_loss = 2.0 * max(
+        float(report.get("opening_loss_mm", 0.0))
+        for report in fingers.values()
+    )
     return meshes, {
+        "family_id": family_id,
         "symmetric": symmetric,
         "mode": mode,
         "parameterized": parameterized,

@@ -8,12 +8,11 @@ type ResultPanelProps = {
   job: string | null;
   building: boolean;
   onBuild: () => void;
-  pairId: string | null;
   bodyUrl: string;
   baseUrl: string;
 };
 
-export function ResultPanel({ report, job, building, onBuild, pairId, bodyUrl, baseUrl }: ResultPanelProps) {
+export function ResultPanel({ report, job, building, onBuild, bodyUrl, baseUrl }: ResultPanelProps) {
   if (!report) {
     return (
       <aside className="panel result-panel">
@@ -73,8 +72,8 @@ export function ResultPanel({ report, job, building, onBuild, pairId, bodyUrl, b
         <button className="build-button" onClick={onBuild} disabled={building || !report.ready}>
           {building ? "正在生成…" : job ? "重新生成 STL" : "生成 STL"}
         </button>
-        <a className="original-link" href={pairId ? bodyUrl : `${GEOMETRY_API}/api/original`} download>下载当前主体原始 STL</a>
-        <a className="original-link" href={pairId ? baseUrl : `${GEOMETRY_API}/api/base`} download>下载当前配套底座 STL</a>
+        <a className="original-link" href={bodyUrl} download>下载当前预览主体 STL</a>
+        <a className="original-link" href={baseUrl} download>下载当前预览底座 STL</a>
       </section>
 
       {report.notes.length > 0 && <section className="notes">{report.notes.map((note) => <p key={note}>{note}</p>)}</section>}

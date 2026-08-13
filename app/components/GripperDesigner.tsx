@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { applyGeneChange } from "../lib/design-state";
+import { applyFamilyGeneChange } from "../lib/design-state";
 import { fileToBase64, geometryApi } from "../features/gripper/api";
 import { GEOMETRY_API, INTERFACE_CONTROLS } from "../features/gripper/config";
-import { cloneDesign, withInterface } from "../features/gripper/design";
+import { cloneDesign, familyIdOf, withInterface } from "../features/gripper/design";
 import { PreviewStage } from "../features/gripper/PreviewStage";
 import { ResultPanel } from "../features/gripper/ResultPanel";
 import { useLivePreview } from "../features/gripper/useLivePreview";
@@ -22,8 +22,8 @@ export function GripperDesigner() {
   const [schema, setSchema] = useState<Schema | null>(null);
   const [templateName, setTemplateName] = useState("");
   const [design, setDesign] = useState<Design | null>(null);
-  const designCache = useRef<Partial<Record<"source" | "finray", Design>>>({});
-  const finrayTemplate = useRef("Fin-Ray 默认");
+  const designCache = useRef<Record<string, Design>>({});
+  const selectedTemplateByFamily = useRef<Record<string, string>>({});
   const [editing, setEditing] = useState<"a" | "b">("a");
   const [report, setReport] = useState<Report | null>(null);
   const [status, setStatus] = useState("正在连接几何服务…");
@@ -32,7 +32,7 @@ export function GripperDesigner() {
   const [job, setJob] = useState<string | null>(null);
   const [view, setView] = useState("iso");
   const [displayMode, setDisplayMode] = useState<DisplayMode>("both");
-  const [editedModes, setEditedModes] = useState<Record<"source" | "finray", boolean>>({ source: false, finray: false });
+  const [editedFamilies, setEditedFamilies] = useState<Record<string, boolean>>({});
   const [pairId, setPairId] = useState<string | null>(null);
   const [pairReport, setPairReport] = useState<ImportReport | null>(null);
   const [bodyFile, setBodyFile] = useState<File | null>(null);
@@ -51,11 +51,15 @@ export function GripperDesigner() {
         setSchema(received);
         setTemplateName(initialName);
         const initialDesign = withInterface(received.templates[initialName].design);
-        const finrayDesign = withInterface(received.templates["Fin-Ray 默认"].design, initialDesign.interface);
-        designCache.current = {
-          source: initialDesign,
-          finray: finrayDesign,
-        };
+        designCache.current = Object.fromEntries(received.families.map((family) => [
+          family.id,
+          family.id === familyIdOf(initialDesign)
+            ? initialDesign
+            : withInterface(received.templates[family.default_template].design, initialDesign.interface),
+        ]));
+        selectedTemplateByFamily.current = Object.fromEntries(
+          received.families.map((family) => [family.id, family.default_template]),
+        );
         setDesign(initialDesign);
         setStatus("");
         setStatusType("");
@@ -98,9 +102,9 @@ export function GripperDesigner() {
     };
   }, [design, pairId, pairReport]);
 
-  const activeMode = design?.mode === "finray" ? "finray" : "source";
-  const activeGeneSpecs = schema?.gene_sets?.[activeMode] || schema?.genes || {};
-  const activeGroups = schema?.group_sets?.[activeMode] || schema?.groups || [];
+  const activeFamilyId = design ? familyIdOf(design) : "source";
+  const activeGeneSpecs = schema?.gene_sets?.[activeFamilyId] || schema?.genes || {};
+  const activeGroups = schema?.group_sets?.[activeFamilyId] || schema?.groups || [];
   const genes = design?.[editing];
   const editingAllowed = pairReport?.editable !== false;
   const interfaceEditingAllowed = editingAllowed && !pairId;
@@ -114,23 +118,25 @@ export function GripperDesigner() {
   const applyTemplate = (name: string) => {
     if (!schema || !design) return;
     const next = withInterface(schema.templates[name].design, design.interface);
-    const mode = next.mode === "source" ? "source" : "finray";
-    designCache.current[mode] = next;
-    if (mode === "finray") finrayTemplate.current = name;
+    const familyId = familyIdOf(next);
+    designCache.current[familyId] = next;
+    selectedTemplateByFamily.current[familyId] = name;
     setTemplateName(name);
     setDesign(next);
     setJob(null);
     setEditing("a");
-    setEditedModes((current) => ({ ...current, [mode]: false }));
+    setEditedFamilies((current) => ({ ...current, [familyId]: false }));
   };
 
-  const applyCategory = (mode: "source" | "finray") => {
+  const applyFamily = (familyId: string) => {
     if (!schema || !design) return;
-    const currentMode = design.mode === "source" ? "source" : "finray";
-    designCache.current[currentMode] = cloneDesign(design);
-    const fallback = schema.templates[mode === "source" ? "原始夹爪" : "Fin-Ray 默认"].design;
-    const next = withInterface(designCache.current[mode] || fallback, design.interface);
-    setTemplateName(mode === "source" ? "原始夹爪" : finrayTemplate.current);
+    const currentFamilyId = familyIdOf(design);
+    designCache.current[currentFamilyId] = cloneDesign(design);
+    const family = schema.families.find((candidate) => candidate.id === familyId);
+    if (!family) return;
+    const fallback = schema.templates[family.default_template].design;
+    const next = withInterface(designCache.current[familyId] || fallback, design.interface);
+    setTemplateName(selectedTemplateByFamily.current[familyId] || family.default_template);
     setDesign(next);
     setJob(null);
     setEditing("a");
@@ -139,18 +145,20 @@ export function GripperDesigner() {
   const setGene = (name: string, value: number) => {
     if (!design || !editingAllowed) return;
     const next = cloneDesign(design);
-    if (next.mode === "source") {
-      next.parameterized = true;
-    }
-    next[editing] = next.mode === "source"
-      ? { ...next[editing], [name]: value }
-      : applyGeneChange(next[editing], name, value);
+    next.parameterized = true;
+    const family = schema?.families.find((candidate) => candidate.id === familyIdOf(next));
+    next[editing] = applyFamilyGeneChange(
+      family?.generator || "",
+      next[editing],
+      name,
+      value,
+    );
     if (next.symmetric) next.b = { ...next.a };
-    const mode = next.mode === "source" ? "source" : "finray";
-    designCache.current[mode] = cloneDesign(next);
+    const familyId = familyIdOf(next);
+    designCache.current[familyId] = cloneDesign(next);
     setDesign(next);
     setJob(null);
-    setEditedModes((current) => ({ ...current, [mode]: true }));
+    setEditedFamilies((current) => ({ ...current, [familyId]: true }));
   };
 
   const setInterfaceGene = (name: keyof InterfaceDesign, value: number) => {
@@ -158,19 +166,19 @@ export function GripperDesigner() {
     const next = cloneDesign(design);
     next.parameterized = true;
     next.interface = { ...next.interface, [name]: value };
-    (["source", "finray"] as const).forEach((mode) => {
-      const cached = designCache.current[mode];
-      if (cached) designCache.current[mode] = withInterface(cached, next.interface);
+    Object.keys(designCache.current).forEach((familyId) => {
+      const cached = designCache.current[familyId];
+      if (cached) designCache.current[familyId] = withInterface(cached, next.interface);
     });
-    const mode = next.mode === "source" ? "source" : "finray";
-    designCache.current[mode] = cloneDesign(next);
+    const familyId = familyIdOf(next);
+    designCache.current[familyId] = cloneDesign(next);
     setDesign(next);
     setJob(null);
-    setEditedModes((current) => ({ ...current, [mode]: true }));
+    setEditedFamilies((current) => ({ ...current, [familyId]: true }));
   };
 
   const applySourceStructure = (kind: "solid" | "tip" | "body" | "both") => {
-    if (!design || design.mode !== "source") return;
+    if (!design || familyIdOf(design) !== "source") return;
     const next = cloneDesign(design);
     next.parameterized = true;
     const tip = kind === "tip" || kind === "both" ? 65 : 0;
@@ -180,7 +188,7 @@ export function GripperDesigner() {
     designCache.current.source = cloneDesign(next);
     setDesign(next);
     setJob(null);
-    setEditedModes((current) => ({ ...current, source: true }));
+    setEditedFamilies((current) => ({ ...current, source: true }));
   };
 
   const restoreDefaultPair = () => {
@@ -191,13 +199,17 @@ export function GripperDesigner() {
     setBaseFile(null);
     setTemplateName(schema.default_template);
     const sourceDefault = withInterface(schema.templates[schema.default_template].design);
-    designCache.current = {
-      source: sourceDefault,
-      finray: withInterface(schema.templates["Fin-Ray 默认"].design, sourceDefault.interface),
-    };
-    finrayTemplate.current = "Fin-Ray 默认";
+    designCache.current = Object.fromEntries(schema.families.map((family) => [
+      family.id,
+      family.id === familyIdOf(sourceDefault)
+        ? sourceDefault
+        : withInterface(schema.templates[family.default_template].design, sourceDefault.interface),
+    ]));
+    selectedTemplateByFamily.current = Object.fromEntries(
+      schema.families.map((family) => [family.id, family.default_template]),
+    );
     setDesign(sourceDefault);
-    setEditedModes({ source: false, finray: false });
+    setEditedFamilies({});
     setStatus("已恢复当前默认主体和 Robotiq 转接底座");
     setStatusType("");
     window.setTimeout(() => setStatus(""), 1800);
@@ -240,12 +252,12 @@ export function GripperDesigner() {
     const next = cloneDesign(design);
     next.symmetric = symmetric;
     if (symmetric) next.b = { ...next.a };
-    const mode = next.mode === "source" ? "source" : "finray";
-    designCache.current[mode] = cloneDesign(next);
+    const familyId = familyIdOf(next);
+    designCache.current[familyId] = cloneDesign(next);
     setDesign(next);
     setJob(null);
     setEditing("a");
-    setEditedModes((current) => ({ ...current, [mode]: true }));
+    setEditedFamilies((current) => ({ ...current, [familyId]: true }));
   };
 
   const build = async () => {
@@ -302,24 +314,24 @@ export function GripperDesigner() {
       <main className="workspace">
         <aside className="panel controls-panel">
           <section className="block">
-            <h2>夹爪大类</h2>
+            <h2>基本构型</h2>
             <div className="template-list template-categories">
-              {schema.categories.map((category) => (
+              {schema.families.map((family) => (
                 <button
-                  key={category.key}
-                  className={`template-chip category-chip ${activeMode === category.key ? "on" : ""} ${activeMode === category.key && editedModes[category.key] ? "edited" : ""}`}
-                  onClick={() => applyCategory(category.key)}
+                  key={family.id}
+                  className={`template-chip category-chip ${activeFamilyId === family.id ? "on" : ""} ${activeFamilyId === family.id && editedFamilies[family.id] ? "edited" : ""}`}
+                  onClick={() => applyFamily(family.id)}
                 >
-                  {category.title}
+                  {family.title}
                 </button>
               ))}
             </div>
-            {activeMode === "finray" && (
+            {Object.values(schema.templates).filter((template) => template.family_id === activeFamilyId).length > 1 && (
               <div className="template-subtypes">
-                <span>Fin-Ray 小类</span>
+                <span>构型预设</span>
                 <div className="template-list">
                   {Object.entries(schema.templates)
-                    .filter(([name, template]) => template.category === "finray" && name !== "Fin-Ray 默认")
+                    .filter(([, template]) => template.family_id === activeFamilyId)
                     .map(([name, template]) => (
                       <button
                         key={name}
@@ -333,7 +345,7 @@ export function GripperDesigner() {
               </div>
             )}
             <p className="template-blurb">{schema.templates[templateName].blurb}</p>
-            {activeMode === "source" && (
+            {activeFamilyId === "source" && (
               <div className="source-structure-presets">
                 <span>原始夹爪内部结构</span>
                 <div>
@@ -385,7 +397,7 @@ export function GripperDesigner() {
           <section className="block gene-group interface-controls" aria-labelledby="three-hole-interface-title">
             <h2 id="three-hole-interface-title">三孔接口适配 · 主体／底座共享</h2>
             <p className="interface-contract">
-              可与所有原始主体和 Fin-Ray 参数组合。双孔移动时，同侧底座竖直外沿和主体根部自动跟随；固定单孔与 Robotiq 连接孔不动，三孔始终保持直角布局。
+              可与所有基本构型及其参数组合。双孔移动时，同侧底座竖直外沿和主体根部自动跟随；固定单孔与 Robotiq 连接孔不动，三孔始终保持直角布局。
               {pairId && <strong>导入模型对缺少可靠的孔位语义，暂不开放这两个参数。</strong>}
             </p>
             {INTERFACE_CONTROLS.map(({ name, spec }) => {
@@ -449,14 +461,14 @@ export function GripperDesigner() {
           </section>
 
           <details
-            className={`parameter-cluster ${activeMode === "finray" ? "finray-parameter-cluster" : "source-parameter-cluster"}`}
-            open={activeMode === "source" ? true : undefined}
-            key={activeMode}
+            className={`parameter-cluster ${activeFamilyId === "source" ? "source-parameter-cluster" : "finray-parameter-cluster"}`}
+            open={activeFamilyId === "source" ? true : undefined}
+            key={activeFamilyId}
           >
-            {activeMode === "finray" && (
+            {activeFamilyId !== "source" && (
               <summary>
                 <span>
-                  <b>Fin-Ray 详细参数</b>
+                  <b>{schema.families.find((family) => family.id === activeFamilyId)?.title} 详细参数</b>
                   <small>{Object.keys(activeGeneSpecs).length} 项低频设置，按需展开</small>
                 </span>
                 <em aria-hidden="true" />
@@ -539,6 +551,7 @@ export function GripperDesigner() {
 
         <PreviewStage
           design={design}
+          familyTitle={schema.families.find((family) => family.id === activeFamilyId)?.title || activeFamilyId}
           view={view}
           onViewChange={setView}
           displayMode={displayMode}
@@ -553,7 +566,6 @@ export function GripperDesigner() {
           job={job}
           building={building}
           onBuild={build}
-          pairId={pairId}
           bodyUrl={bodyUrl}
           baseUrl={baseUrl}
         />

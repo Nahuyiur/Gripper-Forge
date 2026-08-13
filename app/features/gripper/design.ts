@@ -5,6 +5,10 @@ export function cloneDesign(design: Design): Design {
   return structuredClone(design);
 }
 
+export function familyIdOf(design: Design): string {
+  return design.family_id || design.mode || "finray";
+}
+
 export function withInterface(
   design: Omit<Design, "interface"> & { interface?: Partial<InterfaceDesign> },
   shared?: InterfaceDesign,

@@ -1,8 +1,10 @@
 import { GripperViewer } from "./GripperViewer";
+import { familyIdOf } from "./design";
 import type { Design, DisplayMode } from "./types";
 
 type PreviewStageProps = {
   design: Design;
+  familyTitle: string;
   view: string;
   onViewChange: (view: string) => void;
   displayMode: DisplayMode;
@@ -27,7 +29,7 @@ const VIEWS = [
 ];
 
 export function PreviewStage(props: PreviewStageProps) {
-  const { design, view, onViewChange, displayMode, onDisplayModeChange, bodyUrl, mountUrl, baseUrl, previewRevision } = props;
+  const { design, familyTitle, view, onViewChange, displayMode, onDisplayModeChange, bodyUrl, mountUrl, baseUrl, previewRevision } = props;
   return (
     <section className="stage">
       <div className="stagebar">
@@ -68,9 +70,9 @@ export function PreviewStage(props: PreviewStageProps) {
         </div>
         <div className="viewer-hint">拖动旋转 · 滚轮缩放 · 双击复位</div>
         <div className="axis-note"><span /> {
-          design.mode === "source"
+          familyIdOf(design) === "source"
             ? design.parameterized ? "原始夹爪 · 已参数化修改" : "原始 STL 基准"
-            : "Fin-Ray 参数化区域"
+            : `${familyTitle} · 参数化主体`
         }</div>
       </div>
     </section>

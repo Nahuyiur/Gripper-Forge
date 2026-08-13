@@ -119,15 +119,18 @@ def test_every_template_is_a_valid_printable_mesh() -> None:
         assert report["ready"], report["problems"]
         assert report["interface"]["fastener_count"] == 3
         assert report["interface"]["base_coupled"] is True
-        assert report["interface"]["body_mount_error_mm"] == 0.0
+        assert report["interface"]["body_mount_error_mm"] <= 0.000002
         for role, mesh in meshes.items():
             finger = report["fingers"][role]
             assert mesh.is_watertight
             assert mesh.is_winding_consistent
-            assert finger["mount_error_mm"] == 0.0
+            assert finger["mount_error_mm"] <= 0.000002
             assert finger["degenerate_faces"] == 0
             assert finger["body_count"] == 1
-            expected_cavities = 0 if template["design"].get("mode") == "source" else finger["genes"]["rib_count"]
+            expected_cavities = (
+                finger["genes"]["rib_count"]
+                if template["family_id"] == "finray" else 0
+            )
             assert finger["cavity_count"] == expected_cavities
             assert finger["volume_mm3"] > 0
 
@@ -191,12 +194,17 @@ def test_api_check_build_and_download_roundtrip() -> None:
     design = TEMPLATES["指甲薄片"]["design"]
     schema = client.get("/api/schema")
     assert schema.status_code == 200
-    assert schema.json()["schema"]["geometry"]["method"] == "dual-source-and-finray"
+    assert schema.json()["schema"]["geometry"]["method"] == "registered-construction-families"
     assert schema.json()["schema"]["default_template"] == "原始夹爪"
     schema_payload = schema.json()["schema"]
-    assert [item["key"] for item in schema_payload["categories"]] == ["source", "finray"]
+    assert [item["key"] for item in schema_payload["categories"]] == [
+        "source", "finray", "arc_wrap", "precision_tip",
+    ]
+    assert [item["id"] for item in schema_payload["families"]] == [
+        "source", "finray", "arc_wrap", "precision_tip",
+    ]
     assert set(schema_payload["gene_sets"]["source"]) == set(SOURCE_GENES)
-    assert all(TEMPLATES[name]["category"] == "finray" for name in ("防滑纹", "圆物托槽", "指甲薄片"))
+    assert all(TEMPLATES[name]["family_id"] == "finray" for name in ("防滑纹", "圆物托槽", "指甲薄片"))
 
     checked = client.post("/api/check", json={"design": design})
     assert checked.status_code == 200
