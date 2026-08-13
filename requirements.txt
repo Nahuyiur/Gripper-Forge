@@ -1,0 +1,10 @@
+fastapi==0.141.1
+httpx==0.28.1
+manifold3d==3.5.2
+mapbox-earcut==2.0.0
+numpy==2.5.2
+python-multipart==0.0.32
+scipy==1.18.0
+shapely==2.1.1
+trimesh==5.0.0
+uvicorn==0.52.2
