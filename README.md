@@ -21,11 +21,9 @@
 ## ◈ 实时演示
 
 <div align="center">
-  <img src="docs/assets/readme/gripper-forge-demo.gif" width="100%" alt="Gripper Forge 参数化 STL 实时重建演示" />
+  <img src="docs/assets/readme/gripper-forge-demo-hd.webp" width="100%" alt="Gripper Forge 参数化 STL 高清实时重建演示" />
   <br />
   <sub>原始夹爪变形 → 三孔接口联动 → Fin-Ray 模板切换 → 返回初始状态</sub>
-  <br />
-  <a href="docs/assets/readme/gripper-forge-demo.mp4">查看高清 MP4</a>
 </div>
 
 ---
