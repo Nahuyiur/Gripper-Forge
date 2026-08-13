@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const page = readFileSync(new URL("../app/components/GripperDesigner.tsx", import.meta.url), "utf8");
+const designer = readFileSync(new URL("../app/components/GripperDesigner.tsx", import.meta.url), "utf8");
+const config = readFileSync(new URL("../app/features/gripper/config.ts", import.meta.url), "utf8");
+const viewer = readFileSync(new URL("../app/features/gripper/GripperViewer.tsx", import.meta.url), "utf8");
+const previewStage = readFileSync(new URL("../app/features/gripper/PreviewStage.tsx", import.meta.url), "utf8");
+const resultPanel = readFileSync(new URL("../app/features/gripper/ResultPanel.tsx", import.meta.url), "utf8");
+const livePreview = readFileSync(new URL("../app/features/gripper/useLivePreview.ts", import.meta.url), "utf8");
+const api = readFileSync(new URL("../app/features/gripper/api.ts", import.meta.url), "utf8");
+const page = [designer, config, viewer, previewStage, resultPanel, livePreview, api].join("\n");
 const layout = readFileSync(new URL("../app/layout.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
@@ -41,7 +48,7 @@ test("依赖型控件会自动启用配套几何，不会出现拖动无效果",
 });
 
 test("三孔接口只有两个共享参数，并由真实后端同步预览三类零件", () => {
-  const interfaceSpecs = page.slice(page.indexOf("const INTERFACE_CONTROLS"), page.indexOf("function cloneDesign"));
+  const interfaceSpecs = config.slice(config.indexOf("const INTERFACE_CONTROLS"));
   assert.equal([...interfaceSpecs.matchAll(/\n\s+name: /g)].length, 2);
   for (const text of ["三孔接口适配 · 主体／底座共享", "双孔中心距", "单孔至双孔轴线距离", "同侧底座竖直外沿和主体根部自动跟随", "固定单孔与 Robotiq 连接孔不动", "三孔始终保持直角布局"]) {
     assert.match(page, new RegExp(text));

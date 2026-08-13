@@ -99,30 +99,34 @@ Gripper Forge 把这条链路压缩成一个浏览器工作台：
 
 ```text
 Gripper-Forge/
-├── app/       浏览器界面 · Three.js 预览 · 参数状态
-├── backend/   STL 生成 · 布尔几何 · 检查 · 导入导出 API
+├── app/
+│   ├── components/        页面业务编排
+│   └── features/gripper/  状态 · API · 实时预览 · Three.js · 结果面板
+├── backend/
+│   ├── model.py           几何领域内核
+│   ├── service.py         检查／预览／导出统一求值
+│   └── app.py             轻量 HTTP 路由
 ├── public/    默认主体与机器人夹爪转接底座 STL
 ├── tests/     几何测试 · 参数矩阵 · 前端能力契约
-├── db/        可选持久化数据结构
-└── worker/    部署运行入口
+├── docs/      架构说明与 README 素材
+└── start.sh   依赖检查与本地一键启动
 ```
 
 **前端**使用 React、Three.js 与 Vinext；**几何服务**使用 FastAPI、Trimesh、Shapely 与 Manifold3D。实时预览通过一次请求返回主体与底座的紧凑二进制 STL 包，浏览器只保留一个进行中的请求，并自动跳过已经过时的中间状态。
 
+更详细的模块边界见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
+
 ## ▶ 快速启动
 
-需要 **Node.js 20+** 与 **Python 3.12**。
+需要 **Node.js 22.13+** 与 **Python 3.12+**。启动脚本会自动创建 Python 虚拟环境，并只在锁文件变化时重新安装依赖。
 
 ```bash
 git clone https://github.com/Nahuyiur/Gripper-Forge.git
 cd Gripper-Forge
-
-npm install
-python3.12 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-
-npm run dev:all
+bash start.sh
 ```
+
+以后再次运行仍然只需要 `bash start.sh`；按 `Ctrl+C` 会同时停止网页与几何服务。若只想提前安装或检查依赖，可运行 `bash start.sh --install-only`。
 
 | 服务 | 地址 |
 |---|---|

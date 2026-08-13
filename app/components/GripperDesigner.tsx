@@ -1,414 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { useEffect, useRef, useState } from "react";
 import { applyGeneChange } from "../lib/design-state";
-import { safePreviewGap } from "../lib/finray-preview";
-import { decodeLivePreviewBundle } from "../lib/live-preview";
-
-type GeneValue = number;
-type Genes = Record<string, GeneValue>;
-type InterfaceDesign = {
-  pair_hole_pitch_mm: number;
-  single_to_pair_span_mm: number;
-};
-type Design = {
-  mode?: "source" | "finray";
-  parameterized?: boolean;
-  symmetric: boolean;
-  interface: InterfaceDesign;
-  a: Genes;
-  b: Genes;
-};
-
-type GeneSpec = {
-  min: number;
-  max: number;
-  step: number;
-  group: string;
-  label: string;
-  unit: string;
-  blurb: string;
-  int?: boolean;
-  boolean?: boolean;
-};
-
-type Template = { title: string; category: "source" | "finray"; blurb: string; design: Design };
-type Schema = {
-  genes: Record<string, GeneSpec>;
-  groups: Array<{ key: string; title: string }>;
-  gene_sets: Record<"source" | "finray", Record<string, GeneSpec>>;
-  group_sets: Record<"source" | "finray", Array<{ key: string; title: string }>>;
-  categories: Array<{ key: "source" | "finray"; title: string; default_template: string }>;
-  templates: Record<string, Template>;
-  default_template: string;
-  roles: { labels: Record<string, string> };
-};
-
-type FingerReport = {
-  role: string;
-  label: string;
-  reach_mm: number;
-  volume_mm3: number;
-  plastic_g: number;
-  watertight: boolean;
-  winding_consistent: boolean;
-  size_mm: number[];
-  mount_error_mm: number;
-  degenerate_faces: number;
-  body_count: number;
-  contact_feature_count: number;
-  problems: string[];
-  notes: string[];
-  genes: Genes;
-  stl: string;
-};
-
-type Report = {
-  mode?: "source" | "finray";
-  parameterized?: boolean;
-  symmetric: boolean;
-  fingers: Record<string, FingerReport>;
-  pair: {
-    opening_mm: number;
-    max_opening_mm: number;
-    reach_mm: number;
-    plastic_g: number;
-    print_quantity: number;
-    preview_gap_mm: number;
-    preview_clearance_mm: number;
-  };
-  interface: {
-    fastener_count: number;
-    body_mount_error_mm: number;
-    base_coupled: boolean;
-    policy: string;
-  };
-  problems: string[];
-  notes: string[];
-  ready: boolean;
-};
-
-type JobState = { state: "running" | "done" | "failed"; report?: Report; error?: string };
-
-type ImportReport = {
-  ready: boolean;
-  editable: boolean;
-  body_watertight: boolean;
-  base_watertight: boolean;
-  body_hole_count: number;
-  base_hole_count: number;
-  axis_error_mm: number | null;
-  robotiq_pattern_error_mm: number | null;
-  body_contract_error_mm: number | null;
-  body_size_mm: number[];
-  base_size_mm: number[];
-  problems: string[];
-  policy: string;
-};
-
-const API = process.env.NEXT_PUBLIC_GEOMETRY_API || "http://localhost:8787";
-const COLORS = [0xff5e57, 0x00b9b6];
-const DEFAULT_INTERFACE: InterfaceDesign = {
-  pair_hole_pitch_mm: 35,
-  single_to_pair_span_mm: 30.0718,
-};
-const INTERFACE_CONTROLS: Array<{ name: keyof InterfaceDesign; spec: GeneSpec }> = [
-  {
-    name: "pair_hole_pitch_mm",
-    spec: {
-      min: 20,
-      max: 35,
-      step: 0.5,
-      group: "three_hole_interface",
-      label: "双孔中心距",
-      unit: "毫米",
-      blurb: "调节双孔纵向中心距；上侧底座边界和主体根部同步移动，固定单孔不动。",
-    },
-  },
-  {
-    name: "single_to_pair_span_mm",
-    spec: {
-      min: 20,
-      max: 30.0718,
-      step: 0.5,
-      group: "three_hole_interface",
-      label: "单孔至双孔轴线距离",
-      unit: "毫米",
-      blurb: "调节横向轴距；双孔侧底座外沿保持竖直并整体内收，主体根部同步跟随。",
-    },
-  },
-];
-
-function cloneDesign(design: Design): Design {
-  return JSON.parse(JSON.stringify(design)) as Design;
-}
-
-function withInterface(design: Omit<Design, "interface"> & { interface?: Partial<InterfaceDesign> }, shared?: InterfaceDesign): Design {
-  return {
-    ...cloneDesign(design as Design),
-    interface: { ...DEFAULT_INTERFACE, ...design.interface, ...shared },
-  };
-}
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error(`无法读取 ${file.name}`));
-    reader.onload = () => {
-      const result = String(reader.result || "");
-      resolve(result.includes(",") ? result.split(",", 2)[1] : result);
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-type DisplayMode = "body" | "base" | "both";
-type PreviewPart = "body" | "base";
-type LivePreviewRequest = { design: Design; pairId: string | null };
-
-function Viewer({
-  design,
-  viewRequest,
-  displayMode,
-  bodyUrl,
-  mountUrl,
-  baseUrl,
-  previewRevision,
-}: {
-  design: Design;
-  viewRequest: string;
-  displayMode: DisplayMode;
-  bodyUrl: string;
-  mountUrl: string;
-  baseUrl: string;
-  previewRevision: number;
-}) {
-  const hostRef = useRef<HTMLDivElement>(null);
-  const currentView = useRef(viewRequest);
-  const latestDesign = useRef(design);
-  const latestDisplayMode = useRef(displayMode);
-  const runtime = useRef<{
-    scene: THREE.Scene;
-    camera: THREE.PerspectiveCamera;
-    renderer: THREE.WebGLRenderer;
-    controls: OrbitControls;
-    group: THREE.Group;
-    source: THREE.BufferGeometry;
-    mountSource: THREE.BufferGeometry;
-    baseSource: THREE.BufferGeometry;
-    observer: ResizeObserver;
-  } | null>(null);
-
-  const resetView = useCallback((view: string) => {
-    const rt = runtime.current;
-    if (!rt) return;
-    const target = new THREE.Vector3(0, 78, -13);
-    const positions: Record<string, THREE.Vector3> = {
-      iso: new THREE.Vector3(190, -145, 155),
-      front: new THREE.Vector3(0, 82, 255),
-      side: new THREE.Vector3(255, 82, -13),
-      top: new THREE.Vector3(0, 285, -13),
-    };
-    rt.camera.position.copy(positions[view] || positions.iso);
-    rt.camera.up.set(0, 1, 0);
-    if (view === "top") rt.camera.up.set(0, 0, -1);
-    rt.controls.target.copy(target);
-    rt.controls.update();
-  }, []);
-
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
-    let animation = 0;
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf7f8f8);
-    const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 2000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    host.appendChild(renderer.domElement);
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.08;
-    controls.minDistance = 80;
-    controls.maxDistance = 600;
-    const writeCameraState = () => {
-      host.dataset.cameraState = [
-        ...camera.position.toArray(),
-        ...controls.target.toArray(),
-      ].map((value) => value.toFixed(5)).join(",");
-    };
-    controls.addEventListener("change", writeCameraState);
-    const group = new THREE.Group();
-    scene.add(group);
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x9ba4a6, 2.2));
-    const key = new THREE.DirectionalLight(0xffffff, 3.2);
-    key.position.set(130, -80, 190);
-    scene.add(key);
-    const fill = new THREE.DirectionalLight(0xc9ffff, 1.6);
-    fill.position.set(-160, 180, 70);
-    scene.add(fill);
-
-    const observer = new ResizeObserver(() => {
-      const { width, height } = host.getBoundingClientRect();
-      if (!width || !height) return;
-      renderer.setSize(width, height, false);
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-    });
-    observer.observe(host);
-    runtime.current = {
-      scene,
-      camera,
-      renderer,
-      controls,
-      group,
-      source: new THREE.BufferGeometry(),
-      mountSource: new THREE.BufferGeometry(),
-      baseSource: new THREE.BufferGeometry(),
-      observer,
-    };
-    resetView(currentView.current);
-    writeCameraState();
-
-    const animate = () => {
-      controls.update();
-      renderer.render(scene, camera);
-      animation = requestAnimationFrame(animate);
-    };
-    animate();
-
-    const doubleClick = () => resetView("iso");
-    renderer.domElement.addEventListener("dblclick", doubleClick);
-    return () => {
-      cancelAnimationFrame(animation);
-      observer.disconnect();
-      renderer.domElement.removeEventListener("dblclick", doubleClick);
-      controls.removeEventListener("change", writeCameraState);
-      controls.dispose();
-      renderer.dispose();
-      group.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          obj.geometry.dispose();
-          (obj.material as THREE.Material).dispose();
-        }
-      });
-      sourceCleanup(runtime.current?.source);
-      sourceCleanup(runtime.current?.mountSource);
-      sourceCleanup(runtime.current?.baseSource);
-      runtime.current = null;
-      if (renderer.domElement.parentNode === host) host.removeChild(renderer.domElement);
-    };
-  }, [resetView]);
-
-  useEffect(() => {
-    latestDesign.current = design;
-    latestDisplayMode.current = displayMode;
-    const rt = runtime.current;
-    if (rt) renderDesign(rt, design, displayMode);
-  }, [design, displayMode]);
-
-  const loadRuntimeGeometry = useCallback((url: string, key: "source" | "mountSource" | "baseSource") => {
-    let cancelled = false;
-    const loader = new STLLoader();
-    loader.loadAsync(url).then((geometry) => {
-      const rt = runtime.current;
-      if (cancelled || !rt) {
-        geometry.dispose();
-        return;
-      }
-      geometry.computeVertexNormals();
-      sourceCleanup(rt[key]);
-      rt[key] = geometry;
-      renderDesign(rt, latestDesign.current, latestDisplayMode.current);
-    }).catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => loadRuntimeGeometry(bodyUrl, "source"), [bodyUrl, loadRuntimeGeometry]);
-  useEffect(() => loadRuntimeGeometry(mountUrl, "mountSource"), [mountUrl, loadRuntimeGeometry]);
-  useEffect(() => loadRuntimeGeometry(baseUrl, "baseSource"), [baseUrl, loadRuntimeGeometry]);
-
-  useEffect(() => {
-    currentView.current = viewRequest;
-    resetView(viewRequest);
-  }, [resetView, viewRequest]);
-
-  return (
-    <div
-      className="viewer"
-      ref={hostRef}
-      aria-label="夹爪三维预览"
-      data-live-revision={previewRevision}
-    />
-  );
-}
-
-function sourceCleanup(source?: THREE.BufferGeometry) {
-  source?.dispose();
-}
-
-function renderDesign(
-  rt: {
-    group: THREE.Group;
-    source: THREE.BufferGeometry;
-    mountSource: THREE.BufferGeometry;
-    baseSource: THREE.BufferGeometry;
-  },
-  design: Design,
-  displayMode: DisplayMode,
-) {
-  while (rt.group.children.length) {
-    const child = rt.group.children.pop();
-    child?.traverse((object) => {
-      if (object instanceof THREE.Mesh) {
-        object.geometry.dispose();
-        (object.material as THREE.Material).dispose();
-      }
-    });
-  }
-  const gap = safePreviewGap();
-  [design.a, design.symmetric ? design.a : design.b].forEach((_, index) => {
-    const fingerGroup = new THREE.Group();
-    const material = new THREE.MeshStandardMaterial({
-      color: COLORS[index],
-      roughness: 0.72,
-      metalness: 0.02,
-      side: THREE.DoubleSide,
-    });
-    if (displayMode !== "base") {
-      const bodyMesh = new THREE.Mesh(rt.source.clone(), material);
-      bodyMesh.userData.kind = design.mode === "source" ? "原始主体" : "Fin-Ray 参数化主体";
-      fingerGroup.add(bodyMesh);
-    }
-
-    if (displayMode !== "body") {
-      const baseMaterial = new THREE.MeshStandardMaterial({ color: 0xaeb6b8, roughness: 0.88, metalness: 0.01 });
-      const baseMesh = new THREE.Mesh(rt.baseSource.clone(), baseMaterial);
-      fingerGroup.add(baseMesh);
-    }
-
-    fingerGroup.position.x = index === 0 ? gap / 2 : -gap / 2;
-    if (index === 1) fingerGroup.scale.x = -1;
-    rt.group.add(fingerGroup);
-  });
-}
-
-async function api<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API}${path}`, options);
-  const json = await response.json().catch(() => ({})) as { detail?: string };
-  if (!response.ok) throw new Error(json.detail || "几何服务暂时不可用");
-  return json as T;
-}
-
-function format(value: number, digits = 0) {
-  return Number(value).toFixed(digits);
-}
+import { fileToBase64, geometryApi } from "../features/gripper/api";
+import { GEOMETRY_API, INTERFACE_CONTROLS } from "../features/gripper/config";
+import { cloneDesign, withInterface } from "../features/gripper/design";
+import { PreviewStage } from "../features/gripper/PreviewStage";
+import { ResultPanel } from "../features/gripper/ResultPanel";
+import { useLivePreview } from "../features/gripper/useLivePreview";
+import type {
+  Design,
+  DisplayMode,
+  ImportReport,
+  InterfaceDesign,
+  JobState,
+  Report,
+  Schema,
+} from "../features/gripper/types";
 
 export function GripperDesigner() {
   const [schema, setSchema] = useState<Schema | null>(null);
@@ -425,20 +33,19 @@ export function GripperDesigner() {
   const [view, setView] = useState("iso");
   const [displayMode, setDisplayMode] = useState<DisplayMode>("both");
   const [editedModes, setEditedModes] = useState<Record<"source" | "finray", boolean>>({ source: false, finray: false });
-  const [previewUrls, setPreviewUrls] = useState<Partial<Record<PreviewPart, string>>>({});
-  const [previewRevision, setPreviewRevision] = useState(0);
-  const previewUrlsRef = useRef<Partial<Record<PreviewPart, string>>>({});
-  const livePreviewPending = useRef<LivePreviewRequest | null>(null);
-  const livePreviewRunning = useRef(false);
-  const livePreviewAlive = useRef(true);
   const [pairId, setPairId] = useState<string | null>(null);
   const [pairReport, setPairReport] = useState<ImportReport | null>(null);
   const [bodyFile, setBodyFile] = useState<File | null>(null);
   const [baseFile, setBaseFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
+  const { previewUrls, previewRevision, error: livePreviewError } = useLivePreview(
+    design,
+    pairId,
+    pairReport?.editable !== false,
+  );
 
   useEffect(() => {
-    api<{ schema: Schema }>("/api/schema")
+    geometryApi<{ schema: Schema }>("/api/schema")
       .then(({ schema: received }) => {
         const initialName = received.default_template;
         setSchema(received);
@@ -459,64 +66,6 @@ export function GripperDesigner() {
       });
   }, []);
 
-  const pumpLivePreview = useCallback(async () => {
-    if (livePreviewRunning.current) return;
-    livePreviewRunning.current = true;
-    try {
-      while (livePreviewPending.current && livePreviewAlive.current) {
-        const request = livePreviewPending.current;
-        livePreviewPending.current = null;
-        const response = await fetch(`${API}/api/preview-live`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ design: request.design, pair_id: request.pairId }),
-        });
-        if (!response.ok) throw new Error("几何服务没有返回实时 STL");
-        const parts = decodeLivePreviewBundle(await response.arrayBuffer());
-        if (!livePreviewAlive.current) return;
-        const nextUrls: Record<PreviewPart, string> = {
-          body: URL.createObjectURL(new Blob([parts.body], { type: "model/stl" })),
-          base: URL.createObjectURL(new Blob([parts.base], { type: "model/stl" })),
-        };
-        Object.values(previewUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
-        previewUrlsRef.current = nextUrls;
-        setPreviewUrls(nextUrls);
-        setPreviewRevision((current) => current + 1);
-      }
-    } catch {
-      if (livePreviewAlive.current) {
-        setStatus("实时 STL 暂时无法同步更新");
-        setStatusType("bad");
-      }
-    } finally {
-      livePreviewRunning.current = false;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!design) return;
-    if (pairReport && !pairReport.editable) {
-      livePreviewPending.current = null;
-      const timer = window.setTimeout(() => {
-        Object.values(previewUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
-        previewUrlsRef.current = {};
-        setPreviewUrls({});
-      }, 0);
-      return () => window.clearTimeout(timer);
-    }
-    livePreviewPending.current = { design: cloneDesign(design), pairId };
-    void pumpLivePreview();
-  }, [design, pairId, pairReport, pumpLivePreview]);
-
-  useEffect(() => {
-    livePreviewAlive.current = true;
-    return () => {
-      livePreviewAlive.current = false;
-      livePreviewPending.current = null;
-      Object.values(previewUrlsRef.current).forEach((url) => URL.revokeObjectURL(url));
-    };
-  }, []);
-
   useEffect(() => {
     if (!design) return;
     if (pairReport && !pairReport.editable) {
@@ -526,7 +75,7 @@ export function GripperDesigner() {
     const timer = window.setTimeout(() => {
       setStatus("正在检查实体…");
       setStatusType("busy");
-      api<{ report: Report }>("/api/check", {
+      geometryApi<{ report: Report }>("/api/check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ design, pair_id: pairId }),
@@ -555,10 +104,12 @@ export function GripperDesigner() {
   const genes = design?.[editing];
   const editingAllowed = pairReport?.editable !== false;
   const interfaceEditingAllowed = editingAllowed && !pairId;
-  const originalBodyUrl = pairId ? `${API}/api/imported?pair_id=${encodeURIComponent(pairId)}&part=body` : "/zhuti-2-0813-original.stl";
+  const originalBodyUrl = pairId ? `${GEOMETRY_API}/api/imported?pair_id=${encodeURIComponent(pairId)}&part=body` : "/zhuti-2-0813-original.stl";
   const bodyUrl = previewUrls.body || originalBodyUrl;
-  const mountUrl = pairId ? `${API}/api/imported?pair_id=${encodeURIComponent(pairId)}&part=mount` : `${API}/api/mount`;
-  const baseUrl = previewUrls.base || (pairId ? `${API}/api/imported?pair_id=${encodeURIComponent(pairId)}&part=base` : "/底座-original.stl");
+  const mountUrl = pairId ? `${GEOMETRY_API}/api/imported?pair_id=${encodeURIComponent(pairId)}&part=mount` : `${GEOMETRY_API}/api/mount`;
+  const baseUrl = previewUrls.base || (pairId ? `${GEOMETRY_API}/api/imported?pair_id=${encodeURIComponent(pairId)}&part=base` : "/底座-original.stl");
+  const visibleStatus = livePreviewError || status;
+  const visibleStatusType = livePreviewError ? "bad" : statusType;
 
   const applyTemplate = (name: string) => {
     if (!schema || !design) return;
@@ -659,7 +210,7 @@ export function GripperDesigner() {
     setStatusType("busy");
     try {
       const [bodyBase64, baseBase64] = await Promise.all([fileToBase64(bodyFile), fileToBase64(baseFile)]);
-      const result = await api<{ pair_id: string; report: ImportReport }>("/api/import-pair", {
+      const result = await geometryApi<{ pair_id: string; report: ImportReport }>("/api/import-pair", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -703,7 +254,7 @@ export function GripperDesigner() {
     setStatus("正在生成可下载的 STL…");
     setStatusType("busy");
     try {
-      const started = await api<{ job: string }>("/api/build", {
+      const started = await geometryApi<{ job: string }>("/api/build", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ design, pair_id: pairId }),
@@ -711,7 +262,7 @@ export function GripperDesigner() {
       let state: JobState = { state: "running" };
       while (state.state === "running") {
         await new Promise((resolve) => window.setTimeout(resolve, 260));
-        state = await api<JobState>(`/api/job?job=${encodeURIComponent(started.job)}`);
+        state = await geometryApi<JobState>(`/api/job?job=${encodeURIComponent(started.job)}`);
       }
       if (state.state === "failed") throw new Error(state.error || "STL 生成失败");
       setReport(state.report || report);
@@ -727,18 +278,13 @@ export function GripperDesigner() {
     }
   };
 
-  const downloadRoles = useMemo(() => {
-    if (!report) return [];
-    return Object.keys(report.fingers);
-  }, [report]);
-
   if (!schema || !design || !genes) {
     return (
       <main className="loading-screen">
         <div className="loading-mark" />
         <h1>夹爪设计器</h1>
-        <p className={statusType === "bad" ? "loading-error" : ""}>{status}</p>
-        {statusType === "bad" && <button onClick={() => window.location.reload()}>重新连接</button>}
+        <p className={visibleStatusType === "bad" ? "loading-error" : ""}>{visibleStatus}</p>
+        {visibleStatusType === "bad" && <button onClick={() => window.location.reload()}>重新连接</button>}
       </main>
     );
   }
@@ -750,7 +296,7 @@ export function GripperDesigner() {
         <div className="tagline">默认加载当前主体与 Robotiq 转接底座</div>
         <span className="lock-pill">主体／底座接口同步适配</span>
         <div className="spacer" />
-        <div className={`status ${statusType}`}>{status}</div>
+        <div className={`status ${visibleStatusType}`}>{visibleStatus}</div>
       </header>
 
       <main className="workspace">
@@ -991,123 +537,26 @@ export function GripperDesigner() {
           </details>
         </aside>
 
-        <section className="stage">
-          <div className="stagebar">
-            <span className="preview-pill">STL 实时重建</span>
-            <span className="stage-note">三孔直角关系固定，主体、安装区与底座同步预览</span>
-            <div className="spacer" />
-            <div className="object-tabs" aria-label="零件显示模式">
-              {[
-                { id: "body", text: "仅主体" },
-                { id: "base", text: "仅底座" },
-                { id: "both", text: "主体＋底座" },
-              ].map((item) => (
-                <button
-                  key={item.id}
-                  className={displayMode === item.id ? "on" : ""}
-                  aria-pressed={displayMode === item.id}
-                  onClick={() => setDisplayMode(item.id as DisplayMode)}
-                >{item.text}</button>
-              ))}
-            </div>
-            <div className="view-tabs">
-              {[{ id: "iso", text: "默认" }, { id: "front", text: "正视" }, { id: "side", text: "侧视" }, { id: "top", text: "顶视" }].map((item) => (
-                <button key={item.id} className={view === item.id ? "on" : ""} onClick={() => setView(item.id)}>{item.text}</button>
-              ))}
-            </div>
-          </div>
-          <div className="canvas-wrap">
-            <Viewer
-              design={design}
-              viewRequest={view}
-              displayMode={displayMode}
-              bodyUrl={bodyUrl}
-              mountUrl={mountUrl}
-              baseUrl={baseUrl}
-              previewRevision={previewRevision}
-            />
-            <div className="interface-badge">
-              <b>{displayMode === "body" ? "仅主体" : displayMode === "base" ? "仅底座" : "主体＋底座"}</b>
-              <span>{displayMode === "both" ? "三螺丝连接关系可见" : "切换到主体＋底座检查连接"}</span>
-            </div>
-            <div className="viewer-hint">拖动旋转 · 滚轮缩放 · 双击复位</div>
-            <div className="axis-note"><span /> {
-              design.mode === "source"
-                ? design.parameterized ? "原始夹爪 · 已参数化修改" : "原始 STL 基准"
-                : "Fin-Ray 参数化区域"
-            }</div>
-          </div>
-        </section>
-
-        <aside className="panel result-panel">
-          {!report ? (
-            <div className="report-skeleton">
-              <i /><i /><i /><b /><em />
-            </div>
-          ) : (
-            <>
-              <section className="facts">
-                <div><dt>有效开口</dt><dd>{format(report.pair.opening_mm)} 毫米</dd></div>
-                <div><dt>最长伸出</dt><dd>{format(report.pair.reach_mm)} 毫米</dd></div>
-                <div><dt>预计材料</dt><dd>{format(report.pair.plastic_g)} 克</dd></div>
-                <div><dt>预览双指间距</dt><dd>{format(report.pair.preview_gap_mm ?? safePreviewGap())} 毫米</dd></div>
-              </section>
-
-              <section className={`verdict ${report.ready ? "good" : "bad"}`}>
-                <b><span className="verdict-icon">{report.ready ? "✓" : "!"}</span>{report.ready ? "通过全部几何检查" : `${report.problems.length} 项问题需要修复`}</b>
-                {!report.ready && <ul>{report.problems.map((problem) => <li key={problem}>{problem}</li>)}</ul>}
-              </section>
-
-              <section className="validation-grid">
-                <h3>实体检查</h3>
-                <div><span>封闭实体</span><b className={Object.values(report.fingers).every((f) => f.watertight) ? "pass" : "fail"}>{Object.values(report.fingers).every((f) => f.watertight) ? "通过" : "失败"}</b></div>
-                <div><span>三角面方向</span><b className={Object.values(report.fingers).every((f) => f.winding_consistent) ? "pass" : "fail"}>{Object.values(report.fingers).every((f) => f.winding_consistent) ? "通过" : "失败"}</b></div>
-                <div><span>安装区域漂移</span><b className={Object.values(report.fingers).every((f) => f.mount_error_mm === 0) ? "pass" : "fail"}>{Math.max(...Object.values(report.fingers).map((f) => f.mount_error_mm)).toFixed(6)} 毫米</b></div>
-                <div><span>退化三角面</span><b className={Object.values(report.fingers).every((f) => f.degenerate_faces === 0) ? "pass" : "fail"}>{Object.values(report.fingers).reduce((sum, f) => sum + f.degenerate_faces, 0)} 个</b></div>
-                <div><span>单一实体</span><b className={Object.values(report.fingers).every((f) => (f.body_count ?? 1) === 1) ? "pass" : "fail"}>{Object.values(report.fingers).every((f) => (f.body_count ?? 1) === 1) ? "通过" : "失败"}</b></div>
-                <div><span>双指最小净距</span><b className={(report.pair.preview_clearance_mm ?? 0) >= 5 ? "pass" : "fail"}>{(report.pair.preview_clearance_mm ?? 0).toFixed(1)} 毫米</b></div>
-                <div><span>连接螺丝数量</span><b className="pass">{report.interface?.fastener_count ?? 3} 颗</b></div>
-                <div><span>固定单孔／Robotiq 侧面孔</span><b className={report.interface?.base_coupled !== false ? "pass" : "fail"}>{report.interface?.base_coupled !== false ? "基准保持" : "基准漂移"}</b></div>
-                <div><span>三孔直角约束</span><b className={report.interface?.base_coupled !== false ? "pass" : "fail"}>{report.interface?.base_coupled !== false ? "主体底座同步" : "必须重新同步"}</b></div>
-                <div><span>主体／底座接口</span><b className={report.interface?.base_coupled !== false ? "pass" : "fail"}>{report.interface?.base_coupled !== false ? "位置一致" : "必须同步调整"}</b></div>
-              </section>
-
-              {job && (
-                <section className="files">
-                  <h3>文件</h3>
-                  {downloadRoles.map((role) => (
-                    <a className="download-row" key={role} href={`${API}/api/stl?job=${encodeURIComponent(job)}&role=${role}`} download>
-                      <span className="download-icon">↓</span>
-                      <span>{report.fingers[role].stl}</span>
-                      <em>{format(report.fingers[role].plastic_g)} 克{report.symmetric ? " × 2" : ""}</em>
-                    </a>
-                  ))}
-                  <a className="download-row package" href={`${API}/api/package?job=${encodeURIComponent(job)}`} download>
-                    <span className="download-icon">↓</span><span>全部文件包</span><em>ZIP</em>
-                  </a>
-                </section>
-              )}
-
-              <section className="action-block">
-                <button className="build-button" onClick={build} disabled={building || !report.ready}>
-                  {building ? "正在生成…" : job ? "重新生成 STL" : "生成 STL"}
-                </button>
-                <a className="original-link" href={pairId ? bodyUrl : `${API}/api/original`} download>下载当前主体原始 STL</a>
-                <a className="original-link" href={pairId ? baseUrl : `${API}/api/base`} download>下载当前配套底座 STL</a>
-              </section>
-
-              {report.notes.length > 0 && <section className="notes">{report.notes.map((note) => <p key={note}>{note}</p>)}</section>}
-
-              <section className="howto">
-                <h3>打印与验证</h3>
-                <div className="step"><b>1 · 手指</b><p>建议先使用 TPU 95A 打印单只，层高不高于 0.2 毫米。</p></div>
-                <div className="step"><b>2 · 三孔接口</b><p>固定单孔不移动，双孔中心距与横向轴距可调；三孔保持直角，主体与底座必须同步生成并重新检查。</p></div>
-                <div className="step"><b>3 · Robotiq 安装面</b><p>Robotiq 侧面孔保持原始基准，导入模型不具备可靠孔位语义时不开放接口调节。</p></div>
-                <div className="step"><b>4 · 双指测试</b><p>低速闭合，检查左右干涉、目标物滑移和材料疲劳后再上机器人。</p></div>
-              </section>
-            </>
-          )}
-        </aside>
+        <PreviewStage
+          design={design}
+          view={view}
+          onViewChange={setView}
+          displayMode={displayMode}
+          onDisplayModeChange={setDisplayMode}
+          bodyUrl={bodyUrl}
+          mountUrl={mountUrl}
+          baseUrl={baseUrl}
+          previewRevision={previewRevision}
+        />
+        <ResultPanel
+          report={report}
+          job={job}
+          building={building}
+          onBuild={build}
+          pairId={pairId}
+          bodyUrl={bodyUrl}
+          baseUrl={baseUrl}
+        />
       </main>
     </div>
   );
