@@ -206,9 +206,10 @@ SOURCE_DEFAULT = {
 }
 
 DEFAULT = {
-    # 默认比例来自 so101-finger.stl 的 Fin-Ray 主体；安装端仍使用本项目
-    # 的 Robotiq 三孔共享接口和独立连接孔，不沿用 SO-101 的两孔安装块。
-    "finger_length_mm": 57.0,
+    # 截面节奏来自 so101-finger.stl 的 Fin-Ray 主体；默认有效长度放大到
+    # 与本项目 40 毫米宽 Robotiq 安装座更协调的比例。安装端仍使用三孔
+    # 共享接口和独立连接孔，不沿用 SO-101 的两孔安装块。
+    "finger_length_mm": 76.0,
     "tip_thickness_mm": 12.0,
     "tip_lip_mm": 2.0,
     "wall_thickness_mm": 1.6,

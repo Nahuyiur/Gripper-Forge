@@ -50,16 +50,16 @@ def test_finray_default_tracks_so101_shape_without_replacing_robotiq_interface()
     region, cavity_count = profile_region(DEFAULT)
     _, report = design_report(TEMPLATES["Fin-Ray 默认"]["design"])
 
-    assert DEFAULT["finger_length_mm"] == 57.0
+    assert DEFAULT["finger_length_mm"] == 76.0
     assert DEFAULT["tip_thickness_mm"] == 12.0
     assert DEFAULT["wall_thickness_mm"] == 1.6
     assert DEFAULT["rib_count"] == 14
     assert cavity_count == 14
     assert len(region.interiors) == 14
-    assert back_x(0.0, 57.0) == pytest.approx(21.623, abs=0.15)
-    assert back_x(28.5, 57.0) == pytest.approx(15.19, abs=0.2)
-    assert back_x(57.0, 57.0) == pytest.approx(0.87, abs=0.15)
-    assert cavity_edge(14, 14, 57.0) == pytest.approx(53.76, abs=0.15)
+    assert back_x(0.0, 76.0) == pytest.approx(21.623, abs=0.15)
+    assert back_x(38.0, 76.0) == pytest.approx(15.19, abs=0.2)
+    assert back_x(76.0, 76.0) == pytest.approx(0.87, abs=0.15)
+    assert cavity_edge(14, 14, 76.0) == pytest.approx(71.68, abs=0.2)
 
     interface = report["interface"]
     assert interface["fastener_count"] == 3
