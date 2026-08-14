@@ -31,6 +31,7 @@ MOUNT_OVERLAP_MM = 1.0
 ROOT_THICKNESS_MM = 26.0
 Z_CENTER = -13.0
 DENSITY_G_CM3 = 1.21
+FINRAY_ROOT_TARGET_WIDTH_MM = 39.93
 FACE_GAP_MM = 28.0
 MAX_PAIR_OPENING_MM = 100.0
 INTERFACE_FASTENER_COUNT = 3
@@ -502,6 +503,43 @@ def back_x(u: float, length: float) -> float:
     return max(0.85, -4.49156786 * t**3 - 9.03816625 * t**2 - 7.22250935 * t + 21.6232136)
 
 
+def finray_profile_x(u: float, x: float, genes: dict[str, float | int]) -> float:
+    """将参考 Fin-Ray 截面平滑展开到安装座宽度，同时锁定接触面和尖端。
+
+    变换沿截面的相对横向位置插值：接触面完全不动，背梁获得最大展开量，
+    内部空腔和斜肋随同一连续场一起展开。展开量在根部最大，并在尖端平滑
+    衰减为零，因此不会改变手指长度、尖端形态或原有接触特征。
+    """
+    length = float(genes["finger_length_mm"])
+    contact = contact_x(u, genes)
+    back = back_x(u, length)
+    transverse = float(np.clip((x - contact) / max(back - contact, 1e-6), 0.0, 1.0))
+    along = float(np.clip(u / max(length, 1e-6), 0.0, 1.0))
+    root_expansion = max(0.0, FINRAY_ROOT_TARGET_WIDTH_MM - back_x(0.0, length))
+    envelope = 1.0 - float(smoothstep(along))
+    return float(x + root_expansion * envelope * transverse)
+
+
+def _expand_finray_region(region: Polygon, genes: dict[str, float | int]) -> Polygon:
+    """用同一展开场变换外壳与所有空腔，避免只放大外轮廓导致肋条错位。"""
+    shell = [finray_profile_x(float(u), float(x), genes) for u, x in region.exterior.coords]
+    exterior = [
+        (float(u), expanded_x)
+        for (u, _), expanded_x in zip(region.exterior.coords, shell, strict=True)
+    ]
+    holes = []
+    for interior in region.interiors:
+        expanded = [finray_profile_x(float(u), float(x), genes) for u, x in interior.coords]
+        holes.append([
+            (float(u), expanded_x)
+            for (u, _), expanded_x in zip(interior.coords, expanded, strict=True)
+        ])
+    expanded_region = Polygon(exterior, holes).buffer(0)
+    if expanded_region.geom_type != "Polygon" or expanded_region.is_empty or not expanded_region.is_valid:
+        raise ValueError("当前参数组合无法形成有效的加宽 Fin-Ray 截面")
+    return expanded_region
+
+
 REFERENCE_CONTACT_EDGES_MM = np.asarray([
     1.300, 3.623, 6.075, 8.676, 11.447, 14.409, 17.588, 21.011,
     24.706, 28.709, 33.058, 37.794, 42.967, 48.630, 53.571,
@@ -615,6 +653,7 @@ def profile_region(raw_genes: dict[str, Any] | None) -> tuple[Polygon, int]:
     region = region.buffer(0.005, join_style="mitre").buffer(-0.005, join_style="mitre")
     if region.geom_type != "Polygon" or region.is_empty or not region.is_valid:
         raise ValueError("当前参数组合无法形成有效的 Fin-Ray 截面")
+    region = _expand_finray_region(region, genes)
     return region, len(cavities)
 
 

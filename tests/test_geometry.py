@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from backend.app import app
 from backend.model import (
     FACE_GAP_MM,
+    FINRAY_ROOT_TARGET_WIDTH_MM,
     FIXED_HOLE_CENTER,
     base_mesh,
     base_mesh_for_design,
@@ -23,6 +24,7 @@ from backend.model import (
     cavity_edge,
     default_mount_mesh,
     design_report,
+    finray_profile_x,
     inspect_model_pair,
     interface_hole_centers,
     interface_mount_top_y,
@@ -65,6 +67,26 @@ def test_finray_default_tracks_so101_shape_without_replacing_robotiq_interface()
     assert interface["robotiq_side_feature_error_mm"] == 0.0
     assert interface["rear_opening_error_mm"] == 0.0
     assert interface["base_coupled"] is True
+
+
+def test_finray_upper_profile_expands_to_mount_width_without_moving_tip_or_contact_face() -> None:
+    length = float(DEFAULT["finger_length_mm"])
+    root_back = back_x(0.0, length)
+    middle_back = back_x(length * 0.5, length)
+    tip_back = back_x(length, length)
+
+    assert finray_profile_x(0.0, 0.0, DEFAULT) == pytest.approx(0.0, abs=1e-9)
+    assert finray_profile_x(0.0, root_back, DEFAULT) == pytest.approx(
+        FINRAY_ROOT_TARGET_WIDTH_MM,
+        abs=0.001,
+    )
+    assert finray_profile_x(length * 0.5, middle_back, DEFAULT) > middle_back + 8.5
+    assert finray_profile_x(length, tip_back, DEFAULT) == pytest.approx(tip_back, abs=1e-9)
+
+    region, cavity_count = profile_region(DEFAULT)
+    assert cavity_count == DEFAULT["rib_count"]
+    assert len(region.interiors) == DEFAULT["rib_count"]
+    assert region.bounds[3] == pytest.approx(FINRAY_ROOT_TARGET_WIDTH_MM, abs=0.08)
 
 
 def test_refresh_default_is_exact_original_body() -> None:
