@@ -98,12 +98,14 @@ PRECISION_TIP_GROUPS = [
 ]
 
 PRECISION_TIP_DEFAULT = {
-    "finger_length_mm": 62.0,
-    "taper_start": 0.42,
-    "tip_depth_mm": 4.0,
-    "tip_width_mm": 7.0,
-    "tip_offset_mm": -1.0,
-    "contact_pad_mm": 9.0,
+    # 由用户提供的 gripper-fingers.zip / 夹爪手指.stl 反算：在紧凑
+    # 20 x 20 mm 三孔接口下，包围盒、尖端截面和体积均与参考件一致。
+    "finger_length_mm": 64.0,
+    "taper_start": 0.30,
+    "tip_depth_mm": 4.5,
+    "tip_width_mm": 4.5,
+    "tip_offset_mm": -1.75,
+    "contact_pad_mm": 5.0,
 }
 
 

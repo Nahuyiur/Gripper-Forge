@@ -11,7 +11,12 @@ import trimesh
 from fastapi.testclient import TestClient
 
 from backend.app import app
-from backend.geometry_families import ARC_WRAP_GENES, PRECISION_TIP_GENES, build_active_body
+from backend.geometry_families import (
+    ARC_WRAP_GENES,
+    PRECISION_TIP_DEFAULT,
+    PRECISION_TIP_GENES,
+    build_active_body,
+)
 from backend.model import (
     ROOT_THICKNESS_MM,
     Z_CENTER,
@@ -20,7 +25,13 @@ from backend.model import (
     interface_hole_centers,
     planar_hole_pattern,
 )
-from backend.schema import COMPACT_INTERFACE_DEFAULT, INTERFACE_DEFAULT, INTERFACE_GENES, TEMPLATES
+from backend.schema import (
+    COMPACT_INTERFACE_DEFAULT,
+    INTERFACE_DEFAULT,
+    INTERFACE_GENES,
+    PRECISION_INTERFACE_DEFAULT,
+    TEMPLATES,
+)
 
 
 FAMILIES = (
@@ -80,14 +91,9 @@ def test_new_family_default_is_a_real_printable_three_hole_body(
     _assert_real_body_interface(mesh, design)
 
 
-@pytest.mark.parametrize("template_name,family_id,_genes", FAMILIES)
-def test_new_family_default_pair_side_is_compact_and_flush_with_body_root(
-    template_name: str,
-    family_id: str,
-    _genes: dict,
-) -> None:
-    design = deepcopy(TEMPLATES[template_name]["design"])
-    active = build_active_body(GENERATORS[family_id], design["a"]).mesh
+def test_arc_wrap_default_pair_side_is_compact_and_flush_with_body_root() -> None:
+    design = deepcopy(TEMPLATES["弧面包覆"]["design"])
+    active = build_active_body(GENERATORS["arc_wrap"], design["a"]).mesh
     base = base_mesh_for_design(design)
 
     assert design["interface"] == COMPACT_INTERFACE_DEFAULT
@@ -95,6 +101,34 @@ def test_new_family_default_pair_side_is_compact_and_flush_with_body_root(
     # 内收后的底座双孔侧外沿约为 31.93 mm；活动主体根部为 31.5 mm，
     # 两者视觉上齐平，同时底座仍留有打印与沉孔所需的外侧余量。
     assert 0.0 <= float(base.bounds[1, 0] - active.bounds[1, 0]) <= 0.75
+
+
+def test_precision_tip_defaults_reproduce_user_reference_pair() -> None:
+    design = deepcopy(TEMPLATES["精密尖指"]["design"])
+    meshes, report = design_report(design)
+    body = meshes["finger"]
+    base = base_mesh_for_design(design)
+
+    assert design["a"] == PRECISION_TIP_DEFAULT
+    assert design["b"] == PRECISION_TIP_DEFAULT
+    assert design["interface"] == PRECISION_INTERFACE_DEFAULT
+    assert report["ready"], report["problems"]
+    # gripper-fingers.zip 中两份 STL 的实测包围盒；生成值只允许 STL
+    # 浮点量化级差异，防止后续默认参数悄然漂移。
+    assert np.allclose(
+        body.bounds,
+        [[-1.75, 9.999996, -26.0], [29.858196, 104.0, 0.0]],
+        atol=2e-5,
+    )
+    assert np.allclose(
+        base.bounds,
+        [[0.0, 0.0, -32.0], [29.928204, 41.0, 6.0]],
+        atol=2e-5,
+    )
+    assert body.volume == pytest.approx(40005.748, rel=2e-4)
+    _assert_printable(body)
+    _assert_printable(base)
+    _assert_real_body_interface(body, design)
 
 
 @pytest.mark.parametrize("template_name,_family_id,genes", FAMILIES)

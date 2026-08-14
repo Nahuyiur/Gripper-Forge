@@ -44,6 +44,13 @@ COMPACT_INTERFACE_DEFAULT = {
     "single_to_pair_span_mm": 22.0,
 }
 
+# 精密尖指参考 STL 使用两个方向都内收到最小值的紧凑三孔布局。
+# 该设置只属于此构型，不改变其他构型的共享接口缓存和默认值。
+PRECISION_INTERFACE_DEFAULT = {
+    "pair_hole_pitch_mm": 20.0,
+    "single_to_pair_span_mm": 20.0,
+}
+
 
 GENES = {
     "finger_length_mm": {
@@ -301,7 +308,7 @@ TEMPLATES = {
         "design": pair(
             PRECISION_TIP_DEFAULT,
             family_id="precision_tip",
-            interface=COMPACT_INTERFACE_DEFAULT,
+            interface=PRECISION_INTERFACE_DEFAULT,
         ),
     },
 }
