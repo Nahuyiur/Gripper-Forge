@@ -194,7 +194,9 @@ def _arc_wrap_body(raw: dict[str, Any] | None) -> ActiveBody:
     tip_depth = float(genes["tip_depth_mm"])
     wrap_depth = float(genes["wrap_depth_mm"])
     toe_lip = float(genes["toe_lip_mm"])
-    root_depth = 23.0
+    # 与原创构型默认 22 mm 双孔轴距下约 31.93 mm 的底座外沿对齐，
+    # 避免底座在双孔侧单独凸出，同时保留约 5 mm 的孔边距。
+    root_depth = 31.5
 
     def contact_x(u: float) -> float:
         t = float(np.clip(u / length, 0.0, 1.0))
@@ -225,7 +227,8 @@ def _precision_tip_body(raw: dict[str, Any] | None) -> ActiveBody:
     tip_depth = float(genes["tip_depth_mm"])
     tip_offset = float(genes["tip_offset_mm"])
     pad_length = float(genes["contact_pad_mm"])
-    root_depth = 20.0
+    # 紧凑三孔布局下，楔身根部覆盖到双孔侧底座外沿附近，再向窄尖渐缩。
+    root_depth = 31.5
 
     def taper_t(u: float) -> float:
         t = float(np.clip(u / length, 0.0, 1.0))

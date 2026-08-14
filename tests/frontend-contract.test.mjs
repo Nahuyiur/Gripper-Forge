@@ -72,7 +72,9 @@ test("三孔接口只有两个共享参数，并由真实后端同步预览三�
   assert.match(interfaceSpecs, /min: 20,\n\s+max: 35,\n\s+step: 0\.5/);
   assert.match(interfaceSpecs, /min: 20,\n\s+max: 30\.0718,\n\s+step: 0\.5/);
   assert.match(page, /next\.interface =/);
-  assert.match(page, /Object\.keys\(designCache\.current\)/);
+  assert.doesNotMatch(page, /Object\.keys\(designCache\.current\)/);
+  assert.match(designer, /withInterface\(received\.templates\[family\.default_template\]\.design\)/);
+  assert.match(designer, /withInterface\(designCache\.current\[familyId\] \|\| fallback\)/);
   assert.match(page, /\/api\/preview-live/);
   assert.match(page, /data-live-revision/);
   assert.match(page, /setInterfaceGene\(name, Number\(element\.value\)\)/);

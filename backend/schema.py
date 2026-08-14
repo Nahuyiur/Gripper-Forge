@@ -37,6 +37,13 @@ INTERFACE_DEFAULT = {
     "single_to_pair_span_mm": 30.071797370910645,
 }
 
+# 两个原创紧凑构型不需要沿用原始 STL 的宽安装轮廓。双孔轴线内收后，
+# 主体和底座仍由同一接口参数同步生成，固定单孔与 Robotiq 侧孔不动。
+COMPACT_INTERFACE_DEFAULT = {
+    **INTERFACE_DEFAULT,
+    "single_to_pair_span_mm": 22.0,
+}
+
 
 GENES = {
     "finger_length_mm": {
@@ -218,11 +225,17 @@ DEFAULT = {
 }
 
 
-def pair(a: dict, b: dict | None = None, symmetric: bool = True, family_id: str = "finray") -> dict:
+def pair(
+    a: dict,
+    b: dict | None = None,
+    symmetric: bool = True,
+    family_id: str = "finray",
+    interface: dict | None = None,
+) -> dict:
     design = {
         "family_id": family_id,
         "symmetric": symmetric,
-        "interface": deepcopy(INTERFACE_DEFAULT),
+        "interface": deepcopy(interface or INTERFACE_DEFAULT),
         "a": deepcopy(a),
         "b": deepcopy(b or a),
     }
@@ -274,13 +287,21 @@ TEMPLATES = {
         "title": "弧面包覆",
         "family_id": "arc_wrap",
         "blurb": "原创宽面薄身构型，以连续弧槽和圆钝前端包覆圆柱类物体。",
-        "design": pair(ARC_WRAP_DEFAULT, family_id="arc_wrap"),
+        "design": pair(
+            ARC_WRAP_DEFAULT,
+            family_id="arc_wrap",
+            interface=COMPACT_INTERFACE_DEFAULT,
+        ),
     },
     "精密尖指": {
         "title": "精密尖指",
         "family_id": "precision_tip",
         "blurb": "原创紧凑楔形构型，前窄后宽并保留局部平直接触段，用于精密捏取。",
-        "design": pair(PRECISION_TIP_DEFAULT, family_id="precision_tip"),
+        "design": pair(
+            PRECISION_TIP_DEFAULT,
+            family_id="precision_tip",
+            interface=COMPACT_INTERFACE_DEFAULT,
+        ),
     },
 }
 

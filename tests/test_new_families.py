@@ -11,7 +11,7 @@ import trimesh
 from fastapi.testclient import TestClient
 
 from backend.app import app
-from backend.geometry_families import ARC_WRAP_GENES, PRECISION_TIP_GENES
+from backend.geometry_families import ARC_WRAP_GENES, PRECISION_TIP_GENES, build_active_body
 from backend.model import (
     ROOT_THICKNESS_MM,
     Z_CENTER,
@@ -20,13 +20,18 @@ from backend.model import (
     interface_hole_centers,
     planar_hole_pattern,
 )
-from backend.schema import INTERFACE_DEFAULT, INTERFACE_GENES, TEMPLATES
+from backend.schema import COMPACT_INTERFACE_DEFAULT, INTERFACE_DEFAULT, INTERFACE_GENES, TEMPLATES
 
 
 FAMILIES = (
     ("弧面包覆", "arc_wrap", ARC_WRAP_GENES),
     ("精密尖指", "precision_tip", PRECISION_TIP_GENES),
 )
+
+GENERATORS = {
+    "arc_wrap": "arc-wrap-solid",
+    "precision_tip": "precision-wedge-solid",
+}
 
 
 def _mesh_digest(mesh: trimesh.Trimesh) -> str:
@@ -73,6 +78,23 @@ def test_new_family_default_is_a_real_printable_three_hole_body(
     assert report["interface"]["body_mount_error_mm"] <= 0.000002
     _assert_printable(mesh)
     _assert_real_body_interface(mesh, design)
+
+
+@pytest.mark.parametrize("template_name,family_id,_genes", FAMILIES)
+def test_new_family_default_pair_side_is_compact_and_flush_with_body_root(
+    template_name: str,
+    family_id: str,
+    _genes: dict,
+) -> None:
+    design = deepcopy(TEMPLATES[template_name]["design"])
+    active = build_active_body(GENERATORS[family_id], design["a"]).mesh
+    base = base_mesh_for_design(design)
+
+    assert design["interface"] == COMPACT_INTERFACE_DEFAULT
+    assert design["interface"]["single_to_pair_span_mm"] == 22.0
+    # 内收后的底座双孔侧外沿约为 31.93 mm；活动主体根部为 31.5 mm，
+    # 两者视觉上齐平，同时底座仍留有打印与沉孔所需的外侧余量。
+    assert 0.0 <= float(base.bounds[1, 0] - active.bounds[1, 0]) <= 0.75
 
 
 @pytest.mark.parametrize("template_name,_family_id,genes", FAMILIES)

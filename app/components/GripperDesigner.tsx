@@ -55,7 +55,7 @@ export function GripperDesigner() {
           family.id,
           family.id === familyIdOf(initialDesign)
             ? initialDesign
-            : withInterface(received.templates[family.default_template].design, initialDesign.interface),
+            : withInterface(received.templates[family.default_template].design),
         ]));
         selectedTemplateByFamily.current = Object.fromEntries(
           received.families.map((family) => [family.id, family.default_template]),
@@ -135,7 +135,7 @@ export function GripperDesigner() {
     const family = schema.families.find((candidate) => candidate.id === familyId);
     if (!family) return;
     const fallback = schema.templates[family.default_template].design;
-    const next = withInterface(designCache.current[familyId] || fallback, design.interface);
+    const next = withInterface(designCache.current[familyId] || fallback);
     setTemplateName(selectedTemplateByFamily.current[familyId] || family.default_template);
     setDesign(next);
     setJob(null);
@@ -166,10 +166,6 @@ export function GripperDesigner() {
     const next = cloneDesign(design);
     next.parameterized = true;
     next.interface = { ...next.interface, [name]: value };
-    Object.keys(designCache.current).forEach((familyId) => {
-      const cached = designCache.current[familyId];
-      if (cached) designCache.current[familyId] = withInterface(cached, next.interface);
-    });
     const familyId = familyIdOf(next);
     designCache.current[familyId] = cloneDesign(next);
     setDesign(next);
@@ -203,7 +199,7 @@ export function GripperDesigner() {
       family.id,
       family.id === familyIdOf(sourceDefault)
         ? sourceDefault
-        : withInterface(schema.templates[family.default_template].design, sourceDefault.interface),
+        : withInterface(schema.templates[family.default_template].design),
     ]));
     selectedTemplateByFamily.current = Object.fromEntries(
       schema.families.map((family) => [family.id, family.default_template]),
